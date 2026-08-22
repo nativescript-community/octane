@@ -2,9 +2,7 @@
 
 The [Octane](https://octanejs.dev) flavor for [`@nativescript/vite`](https://www.npmjs.com/package/@nativescript/vite): a config helper that runs `@octanejs/vite-plugin` inside a NativeScript Vite build, and the Vite HMR strategy that applies Octane component edits to a running app without a restart.
 
-Octane renders NativeScript views through a universal host driver the app owns — `octane/universal/native` plus a driver that applies host commands to `@nativescript/core` views. The renderer is the app's; this package is the development loop around it. See [`ns-octane`](https://github.com/NathanWalker/ns-octane) for a complete app.
-
-It is a community package on purpose: everything in it is built on the public flavor API of `@nativescript/vite` (`@nativescript/vite/framework` on the server, `@nativescript/vite/hmr/client/framework.js` on the device), so any framework can ship the same thing from its own package, under its own scope, without a change to `@nativescript/vite`.
+Octane renders NativeScript views through a universal host driver the app owns — `octane/universal/native` plus a driver that applies host commands to `@nativescript/core` views. 
 
 ## Install
 
@@ -28,7 +26,7 @@ export default defineConfig(({ mode }) =>
 `octane.renderers` is the renderer config `@octanejs/vite-plugin` would otherwise read from `octane.config.ts`; a NativeScript renderer is not one of Octane's built-ins, so the app declares its own. Then:
 
 ```bash
-ns debug ios      # HMR by default — the CLI starts the dev server
+ns debug ios
 ns debug android
 ```
 
@@ -48,7 +46,7 @@ Octane's compiler wraps every exported component in `hmrUniversalComponent` and 
 
 A module that throws while re-evaluating is reported; the app keeps running the previous revision and the next good save applies in place. A dev-server restart (editing the renderer config) becomes one ordered graph reload.
 
-Which accept callback fires is the one Octane-specific decision in here. Vite keeps the callbacks of a module's _latest_ evaluation; the wrapper that owns the live owners belongs to its _first_ evaluation, so the strategy anchors on that callback and keeps firing it. Everything else is Vite's contract, written once for a native host — see the `@nativescript/vite` [framework-flavors guide](https://github.com/NativeScript/NativeScript/blob/main/packages/vite/docs/framework-flavors.md), of which this package is the worked example.
+Which accept callback fires is the one Octane-specific decision in here. Vite keeps the callbacks of a module's _latest_ evaluation; the wrapper that owns the live owners belongs to its _first_ evaluation, so the strategy anchors on that callback and keeps firing it.
 
 ## Peer versions
 
