@@ -4,7 +4,7 @@ export default defineConfig(() => ({
   root: __dirname,
   cacheDir: '../../node_modules/.vite/packages/vite-octane',
   test: {
-    name: '@nativescript/vite-octane',
+    name: '@nativescript-community/vite-octane',
     watch: false,
     globals: true,
     environment: 'node',

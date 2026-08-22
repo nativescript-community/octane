@@ -1,5 +1,5 @@
 {
-  "name": "@nativescript/vite-octane",
+  "name": "@nativescript-community/vite-octane",
   "version": "0.1.0",
   "description": "Octane flavor for @nativescript/vite — config helper and Vite HMR strategy for Octane apps on NativeScript",
   "license": "MIT",
@@ -32,7 +32,7 @@
       "flavor": "octane",
       "config": {
         "import": "octaneConfig",
-        "from": "@nativescript/vite-octane"
+        "from": "@nativescript-community/vite-octane"
       }
     }
   },

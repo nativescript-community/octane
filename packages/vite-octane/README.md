@@ -1,13 +1,15 @@
-# @nativescript/vite-octane
+# @nativescript-community/vite-octane
 
 The [Octane](https://octanejs.dev) flavor for [`@nativescript/vite`](https://www.npmjs.com/package/@nativescript/vite): a config helper that runs `@octanejs/vite-plugin` inside a NativeScript Vite build, and the Vite HMR strategy that applies Octane component edits to a running app without a restart.
 
 Octane renders NativeScript views through a universal host driver the app owns — `octane/universal/native` plus a driver that applies host commands to `@nativescript/core` views. The renderer is the app's; this package is the development loop around it. See [`ns-octane`](https://github.com/NathanWalker/ns-octane) for a complete app.
 
+It is a community package on purpose: everything in it is built on the public flavor API of `@nativescript/vite` (`@nativescript/vite/framework` on the server, `@nativescript/vite/hmr/client/framework.js` on the device), so any framework can ship the same thing from its own package, under its own scope, without a change to `@nativescript/vite`.
+
 ## Install
 
 ```bash
-npm i -D @nativescript/vite-octane @nativescript/vite @octanejs/vite-plugin
+npm i -D @nativescript-community/vite-octane @nativescript/vite @octanejs/vite-plugin
 npm i octane
 ```
 
@@ -15,7 +17,7 @@ npm i octane
 
 ```ts
 import { defineConfig } from 'vite';
-import { octaneConfig } from '@nativescript/vite-octane';
+import { octaneConfig } from '@nativescript-community/vite-octane';
 import { nativeScriptRenderers } from './src/octane/config';
 
 export default defineConfig(({ mode }) =>

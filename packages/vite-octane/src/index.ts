@@ -19,7 +19,7 @@ export { octaneServerStrategy } from './server/strategy.js';
 registerFrameworkFlavor({
   flavor: 'octane',
   server: octaneServerStrategy,
-  client: '@nativescript/vite-octane/client',
+  client: '@nativescript-community/vite-octane/client',
 });
 
 export interface OctaneConfigOptions extends TypeCheckControlOptions {
