@@ -1,0 +1,56 @@
+{
+  "name": "@nativescript/vite-octane",
+  "version": "0.1.0",
+  "description": "Octane flavor for @nativescript/vite — config helper and Vite HMR strategy for Octane apps on NativeScript",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "@nativescript/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./client": {
+      "@nativescript/source": "./src/client/strategy.ts",
+      "types": "./dist/client/strategy.d.ts",
+      "import": "./dist/client/strategy.js",
+      "default": "./dist/client/strategy.js"
+    }
+  },
+  "files": [
+    "dist",
+    "!**/*.tsbuildinfo",
+    "README.md"
+  ],
+  "nativescript": {
+    "vite": {
+      "flavor": "octane",
+      "config": {
+        "import": "octaneConfig",
+        "from": "@nativescript/vite-octane"
+      }
+    }
+  },
+  "peerDependencies": {
+    "@nativescript/vite": ">=8.0.0",
+    "@octanejs/vite-plugin": ">=0.1.17",
+    "vite": "^8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NativeScript/octane",
+    "directory": "packages/vite-octane"
+  },
+  "homepage": "https://github.com/NativeScript/octane",
+  "keywords": [
+    "nativescript",
+    "octane",
+    "vite",
+    "hmr"
+  ]
+}

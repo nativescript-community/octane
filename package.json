@@ -1,22 +1,43 @@
 {
-  "name": "@org/source",
+  "name": "@nativescript/octane-workspace",
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {},
   "private": true,
-  "dependencies": {},
   "devDependencies": {
+    "@nativescript/core": "^9.1.0-next.4",
+    "@nativescript/vite": "file:tools/vendor/nativescript-vite-8.0.0-flavors.tgz",
     "@nx/js": "23.1.1",
+    "@nx/vitest": "23.1.1",
+    "@octanejs/vite-plugin": "^0.1.43",
     "@swc-node/register": "1.11.1",
     "@swc/core": "1.15.8",
     "@swc/helpers": "0.5.18",
-    "@types/node": "^24.0.0",
+    "@types/node": "^22.20.1",
+    "@vitest/coverage-v8": "~4.1.0",
     "nx": "23.1.1",
+    "octane": "^0.1.43",
     "prettier": "^3.8.1",
     "tslib": "^2.3.0",
-    "typescript": "~6.0.3"
+    "typescript": "~5.9.3",
+    "verdaccio": "^6.3.2",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
   },
   "workspaces": [
     "packages/*"
-  ]
+  ],
+  "nx": {
+    "includedScripts": [],
+    "targets": {
+      "local-registry": {
+        "executor": "@nx/js:verdaccio",
+        "options": {
+          "port": 4873,
+          "config": ".verdaccio/config.yml",
+          "storage": "tmp/local-registry/storage"
+        }
+      }
+    }
+  }
 }
