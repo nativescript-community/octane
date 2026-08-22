@@ -17,6 +17,3 @@ npx nx test @nativescript-community/vite-octane
 ```
 
 Packages build in place to `packages/<name>/dist` and publish from there.
-
-> Until the `@nativescript/vite` release that carries the framework-flavor API is published,
-> the workspace installs it from `tools/vendor/`.

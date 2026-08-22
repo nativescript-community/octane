@@ -1,6 +1,6 @@
 {
   "name": "@nativescript-community/vite-octane",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Octane for @nativescript/vite",
   "license": "MIT",
   "type": "module",
@@ -37,7 +37,7 @@
     }
   },
   "peerDependencies": {
-    "@nativescript/vite": ">=8.0.0",
+    "@nativescript/vite": ">=8.0.0-dev.0",
     "@octanejs/vite-plugin": ">=0.1.17",
     "vite": "^8.0.0"
   },

@@ -2,7 +2,7 @@
 
 The [Octane](https://octanejs.dev) flavor for [`@nativescript/vite`](https://www.npmjs.com/package/@nativescript/vite): a config helper that runs `@octanejs/vite-plugin` inside a NativeScript Vite build, and the Vite HMR strategy that applies Octane component edits to a running app without a restart.
 
-Octane renders NativeScript views through a universal host driver the app owns — `octane/universal/native` plus a driver that applies host commands to `@nativescript/core` views. 
+Octane renders NativeScript views through a universal host driver the app owns — `octane/universal/native` plus a driver that applies host commands to `@nativescript/core` views.
 
 ## Install
 
@@ -11,7 +11,7 @@ npm i -D @nativescript-community/vite-octane @nativescript/vite @octanejs/vite-p
 npm i octane
 ```
 
-`vite.config.ts`:
+`vite.config.mts`:
 
 ```ts
 import { defineConfig } from 'vite';
