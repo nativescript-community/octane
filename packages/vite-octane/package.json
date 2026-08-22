@@ -43,10 +43,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/NativeScript/octane",
+    "url": "https://github.com/nativescript-community/octane",
     "directory": "packages/vite-octane"
   },
-  "homepage": "https://github.com/NativeScript/octane",
+  "homepage": "https://github.com/nativescript-community/octane",
   "keywords": [
     "nativescript",
     "octane",
