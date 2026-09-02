@@ -1,0 +1,159 @@
+/**
+ * Stand-in for `@nativescript/core` under vitest: the class hierarchy the
+ * driver's `instanceof` checks and child-hosting calls rely on, with no
+ * platform code behind it. Every class the element registry imports must
+ * exist here, or the registry module fails to evaluate.
+ */
+type Handler = (data: unknown) => void;
+
+export class MockViewBase {
+  parent: MockViewBase | null = null;
+  className: unknown = undefined;
+  style: Record<string, unknown> = {};
+  inlineStyle: string | null = null;
+  hostSlot?: string;
+  readonly handlers = new Map<string, Set<Handler>>();
+
+  get typeName(): string {
+    return this.constructor.name;
+  }
+
+  on(type: string, handler: Handler): void {
+    let handlers = this.handlers.get(type);
+    if (handlers === undefined) {
+      handlers = new Set();
+      this.handlers.set(type, handlers);
+    }
+    handlers.add(handler);
+  }
+
+  off(type: string, handler: Handler): void {
+    this.handlers.get(type)?.delete(handler);
+  }
+
+  notify(data: { eventName: string; object?: unknown }): void {
+    for (const handler of [...(this.handlers.get(data.eventName) ?? [])])
+      handler(data);
+  }
+
+  setInlineStyle(css: string): void {
+    this.inlineStyle = css;
+  }
+}
+
+export class MockView extends MockViewBase {
+  visibility = 'visible';
+}
+
+export class MockLayoutBase extends MockView {
+  readonly children: MockView[] = [];
+
+  insertChild(child: MockView, index: number): void {
+    child.parent = this;
+    this.children.splice(index, 0, child);
+  }
+
+  addChild(child: MockView): void {
+    this.insertChild(child, this.children.length);
+  }
+
+  removeChild(child: MockView): void {
+    const index = this.children.indexOf(child);
+    if (index === -1)
+      throw new Error(`${child.typeName} is not a child of ${this.typeName}`);
+    this.children.splice(index, 1);
+    child.parent = null;
+  }
+
+  getChildrenCount(): number {
+    return this.children.length;
+  }
+}
+
+export class MockContentView extends MockView {
+  #content: MockView | null = null;
+
+  get content(): MockView | null {
+    return this.#content;
+  }
+
+  set content(view: MockView | null) {
+    if (this.#content !== null) this.#content.parent = null;
+    this.#content = view;
+    if (view !== null) view.parent = this;
+  }
+}
+
+export class MockTextBase extends MockView {
+  text = '';
+  formattedText: unknown = null;
+}
+
+export class MockSpan {
+  text = '';
+}
+
+export class MockFormattedString {
+  readonly spans: MockSpan[] = [];
+}
+
+export class MockActionBar extends MockView {
+  titleView: MockView | null = null;
+}
+
+const LAYOUTS = [
+  'AbsoluteLayout',
+  'DockLayout',
+  'FlexboxLayout',
+  'GridLayout',
+  'LiquidGlass',
+  'ProxyViewContainer',
+  'RootLayout',
+  'StackLayout',
+  'WrapLayout',
+];
+const CONTENT_VIEWS = ['Frame', 'Page', 'ScrollView'];
+const TEXT_VIEWS = ['Button', 'HtmlView', 'Label', 'TextField', 'TextView'];
+const LEAVES = [
+  'ActionItem',
+  'ActivityIndicator',
+  'DatePicker',
+  'Image',
+  'ListPicker',
+  'ListView',
+  'NavigationButton',
+  'Placeholder',
+  'Progress',
+  'SearchBar',
+  'SegmentedBar',
+  'SegmentedBarItem',
+  'Slider',
+  'Switch',
+  'TabView',
+  'TabViewItem',
+  'TimePicker',
+  'WebView',
+];
+
+export function createCoreMock(): Record<string, unknown> {
+  const core: Record<string, unknown> = {
+    ViewBase: MockViewBase,
+    View: MockView,
+    LayoutBase: MockLayoutBase,
+    ContentView: MockContentView,
+    TextBase: MockTextBase,
+    Span: MockSpan,
+    FormattedString: MockFormattedString,
+    ActionBar: MockActionBar,
+    unsetValue: Symbol('unsetValue'),
+  };
+  const derive = (names: readonly string[], Base: new () => object): void => {
+    for (const name of names)
+      core[name] = { [name]: class extends Base {} }[name];
+  };
+  derive(LAYOUTS, MockLayoutBase);
+  derive(CONTENT_VIEWS, MockContentView);
+  derive(TEXT_VIEWS, MockTextBase);
+  derive(LEAVES, MockView);
+  return core;
+}

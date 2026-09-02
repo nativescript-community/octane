@@ -1,0 +1,61 @@
+{
+  "name": "@nativescript-community/octane",
+  "version": "0.2.0",
+  "description": "Octane on NativeScript",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "@nativescript/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./config": {
+      "@nativescript/source": "./src/config.ts",
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js",
+      "default": "./dist/config.js"
+    },
+    "./intrinsics": {
+      "@nativescript/source": "./src/intrinsics.ts",
+      "types": "./dist/intrinsics.d.ts",
+      "import": "./dist/intrinsics.js",
+      "default": "./dist/intrinsics.js"
+    },
+    "./jsx-runtime": {
+      "@nativescript/source": "./src/jsx-runtime.ts",
+      "types": "./dist/jsx-runtime.d.ts",
+      "import": "./dist/jsx-runtime.js",
+      "default": "./dist/jsx-runtime.js"
+    }
+  },
+  "files": [
+    "dist",
+    "!**/*.tsbuildinfo",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "@nativescript/core": ">=9.1.0",
+    "octane": ">=0.1.51"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nativescript-community/octane",
+    "directory": "packages/octane"
+  },
+  "homepage": "https://github.com/nativescript-community/octane",
+  "keywords": [
+    "nativescript",
+    "octane",
+    "renderer",
+    "jsx"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

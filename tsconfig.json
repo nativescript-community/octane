@@ -4,6 +4,9 @@
   "files": [],
   "references": [
     {
+      "path": "./packages/octane"
+    },
+    {
       "path": "./packages/vite-octane"
     }
   ],

@@ -1,6 +1,6 @@
 {
   "name": "@nativescript-community/vite-octane",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Octane for @nativescript/vite",
   "license": "MIT",
   "type": "module",
@@ -38,7 +38,7 @@
   },
   "peerDependencies": {
     "@nativescript/vite": ">=8.0.0-dev.0",
-    "@octanejs/vite-plugin": ">=0.1.17",
+    "@octanejs/vite-plugin": ">=0.1.51",
     "vite": "^8.0.0"
   },
   "repository": {
@@ -52,5 +52,11 @@
     "octane",
     "vite",
     "hmr"
-  ]
+  ],
+  "dependencies": {
+    "@nativescript-community/octane": "^0.2.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

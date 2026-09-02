@@ -2,13 +2,13 @@
 
 The [Octane](https://octanejs.dev) flavor for [`@nativescript/vite`](https://www.npmjs.com/package/@nativescript/vite): a config helper that runs `@octanejs/vite-plugin` inside a NativeScript Vite build, and the Vite HMR strategy that applies Octane component edits to a running app without a restart.
 
-Octane renders NativeScript views through a universal host driver the app owns — `octane/universal/native` plus a driver that applies host commands to `@nativescript/core` views.
+Octane renders NativeScript views through `@nativescript-community/octane`, a universal host driver that applies Octane's host commands to `@nativescript/core` views. This package wires that renderer into the build.
 
 ## Install
 
 ```bash
 npm i -D @nativescript-community/vite-octane @nativescript/vite @octanejs/vite-plugin
-npm i octane
+npm i @nativescript-community/octane octane
 ```
 
 `vite.config.mts`:
@@ -16,14 +16,22 @@ npm i octane
 ```ts
 import { defineConfig } from 'vite';
 import { octaneConfig } from '@nativescript-community/vite-octane';
-import { nativeScriptRenderers } from './src/octane/config';
 
-export default defineConfig(({ mode }) =>
-  octaneConfig({ mode }, { octane: { renderers: nativeScriptRenderers } }),
+export default defineConfig(({ mode }) => octaneConfig({ mode }));
+```
+
+A NativeScript renderer is not one of Octane's built-ins, so `octaneConfig` hands `@octanejs/vite-plugin` the registry from `@nativescript-community/octane/config`, scoped to `src/**/*.tsx`. Pass `octane.renderers` yourself to change the scope:
+
+```ts
+import { nativeScriptRenderers } from '@nativescript-community/octane/config';
+
+octaneConfig(
+  { mode },
+  { octane: { renderers: nativeScriptRenderers({ include: 'app/**/*.tsx' }) } },
 );
 ```
 
-`octane.renderers` is the renderer config `@octanejs/vite-plugin` would otherwise read from `octane.config.ts`; a NativeScript renderer is not one of Octane's built-ins, so the app declares its own. Then:
+Then:
 
 ```bash
 ns debug ios
@@ -50,5 +58,5 @@ Which accept callback fires is the one Octane-specific decision in here. Vite ke
 
 ## Peer versions
 
-- `octane` and `@octanejs/vite-plugin` must be the same version.
+- `@octanejs/vite-plugin` declares the `octane` range it compiles for (0.1.52 pairs with octane 0.2.x); install a pair that satisfies it.
 - Octane declares TypeScript `^5.9` as an optional peer.

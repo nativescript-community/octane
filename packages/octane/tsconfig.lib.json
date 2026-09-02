@@ -7,14 +7,12 @@
     "emitDeclarationOnly": false,
     "forceConsistentCasingInFileNames": true,
     "types": ["node"],
-    "importHelpers": false
+    "importHelpers": false,
+    "module": "esnext",
+    "moduleResolution": "bundler"
   },
   "include": ["src/**/*.ts"],
-  "references": [
-    {
-      "path": "../octane/tsconfig.lib.json"
-    }
-  ],
+  "references": [],
   "exclude": [
     "vite.config.ts",
     "vite.config.mts",
