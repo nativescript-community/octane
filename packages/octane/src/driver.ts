@@ -38,6 +38,8 @@ interface HostNode {
   parent: HostNode | null;
   readonly children: HostNode[];
   readonly listeners: Map<string, (data: EventData) => void>;
+  /** Change events muted while the driver writes the prop they echo (`text` → `textChange`). */
+  readonly muted: Set<string>;
   /** Whether this node's `text` has been driven by `#text` children. */
   textApplied: boolean;
 }
@@ -84,6 +86,7 @@ function createNode(
     parent: null,
     children: [],
     listeners: new Map(),
+    muted: new Set(),
     textApplied: false,
   };
   applyProps(node, props);
@@ -109,7 +112,7 @@ function applyProps(
     syncText(node.parent);
     return;
   }
-  for (const name in props) setProp(node.view, name, props[name]);
+  for (const name in props) setProp(node, node.view, name, props[name]);
 }
 
 /**
@@ -125,7 +128,12 @@ function updateProps(
   node.props = { ...node.props, ...next };
 }
 
-function setProp(view: ViewBase, name: string, value: unknown): void {
+function setProp(
+  node: HostNode,
+  view: ViewBase,
+  name: string,
+  value: unknown,
+): void {
   if (name === 'children' || name === 'key' || name === 'ref') return;
   // Event props arrive as their own `event` commands.
   if (EVENT_PROP.test(name)) return;
@@ -138,7 +146,16 @@ function setProp(view: ViewBase, name: string, value: unknown): void {
     applyStyle(view, value);
     return;
   }
-  (view as unknown as Record<string, unknown>)[name] = value;
+  // Core raises `<name>Change` for a script write exactly as for a user
+  // edit; a controlled input must not see its own value come back as one.
+  const echo = `${name}Change`;
+  const listening = node.listeners.has(echo);
+  if (listening) node.muted.add(echo);
+  try {
+    (view as unknown as Record<string, unknown>)[name] = value;
+  } finally {
+    if (listening) node.muted.delete(echo);
+  }
 }
 
 function applyStyle(view: ViewBase, value: unknown): void {
@@ -314,6 +331,7 @@ function setEvent(
   }
   if (listener === null) return;
   const handler = (data: EventData) => {
+    if (node.muted.has(type)) return;
     const root = container.root;
     if (root === null) return;
     const fire = () => {

@@ -139,6 +139,7 @@ Details of the host contract that are easy to get wrong, each learned by watchin
 
 - **Text is a host node.** Octane lowers `<label>Hi {name}</label>` to `#text` children; the driver folds them into the parent's `text` and keeps `text="..."` working alongside.
 - **`update` merges.** An update carries the host's dynamic-prop snapshot; attributes that were static in the compiled plan arrive only with `create`. Replacing would strip a node's static layout props on its first update.
+- **A prop write does not echo as its change event.** Core raises `textChange`, `checkedChange`, `selectedIndexChange`, ... for a script write exactly as for a user edit. The driver mutes the paired event while it applies a prop, so a controlled `<textfield text={value} onChange={...} />` receives `onChange` only for edits it did not make itself. (Writing an unchanged value is already a no-op in core.)
 - **Events during a commit are deferred.** Attaching a subtree fires `loaded` synchronously, inside the batch that registered the listener, before the listener is live. The driver defers those to a microtask and drops a dispatch to a listener that is gone rather than aborting the batch.
 - **Detaching is defensive.** `LayoutBase.removeChild` throws for a view that is not attached, and `insert` detaches unconditionally, so the driver checks `parent` first.
 - **Hidden means `collapse`.** A `visibility` command maps `hidden` to NativeScript's `collapse`, which removes the view from layout as well as from the screen.

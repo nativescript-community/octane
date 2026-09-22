@@ -188,6 +188,27 @@ describe('nativeScriptDriver', () => {
     expect(dispatched).toHaveLength(1);
   });
 
+  it('mutes the change event a prop write provokes, but not an edit', () => {
+    const { apply, view, dispatched } = mount(new MockLayoutBase());
+    apply(
+      create(1, 'textfield', { text: 'a' }),
+      insert(1),
+      event(1, 'textChange', listener(9)),
+    );
+    const field = view<MockTextBase>(1);
+    apply(update(1, { text: 'b' }));
+    expect(field.text).toBe('b');
+    expect(dispatched).toEqual([]);
+
+    field.text = 'c';
+    expect(dispatched).toEqual([
+      {
+        listener: 9,
+        data: expect.objectContaining({ eventName: 'textChange', value: 'c' }),
+      },
+    ]);
+  });
+
   it('defers events raised while a batch is applying', async () => {
     class LoadingLayout extends MockLayoutBase {
       override insertChild(child: MockView, index: number): void {
