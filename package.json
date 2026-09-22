@@ -6,7 +6,7 @@
   "private": true,
   "devDependencies": {
     "@nativescript/core": "~9.1.0",
-    "@nativescript/vite": "8.0.0-dev.0",
+    "@nativescript/vite": "8.0.11",
     "@nx/js": "23.1.1",
     "@nx/vitest": "23.1.1",
     "@octanejs/vite-plugin": "^0.1.52",
