@@ -1,6 +1,6 @@
 {
   "name": "@nativescript-community/vite-octane",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Octane for @nativescript/vite",
   "license": "MIT",
   "type": "module",
