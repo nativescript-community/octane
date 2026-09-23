@@ -1,6 +1,6 @@
 {
   "name": "@nativescript-community/octane",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "nx": {
     "name": "octane"
   },

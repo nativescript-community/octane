@@ -1,3 +1,13 @@
+## 0.2.2 (2026-09-23)
+
+### 🚀 Features
+
+- **octane:** host TabView items and their views from JSX ([#10](https://github.com/nativescript-community/octane/pull/10))
+
+### ❤️ Thank You
+
+- Nathan Walker
+
 ## 0.2.1 (2026-09-23)
 
 ### 🚀 Features
