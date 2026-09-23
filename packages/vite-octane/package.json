@@ -37,7 +37,7 @@
     }
   },
   "peerDependencies": {
-    "@nativescript/vite": ">=8.0.0-dev.0",
+    "@nativescript/vite": ">=8.0.11",
     "@octanejs/vite-plugin": ">=0.1.51",
     "vite": "^8.0.0"
   },

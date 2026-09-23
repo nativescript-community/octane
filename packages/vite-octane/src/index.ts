@@ -21,6 +21,11 @@ registerFrameworkFlavor({
   flavor: 'octane',
   server: octaneServerStrategy,
   client: '@nativescript-community/vite-octane/client',
+  // The compiler rewrites `from 'octane'` in the components it owns to
+  // `@nativescript-community/octane`, which imports only
+  // `octane/universal/native`. Seeded as a dependency root, `octane` would
+  // vendor its DOM runtime into the dev deps bundle wholesale.
+  vendor: { exclude: ['octane'] },
 });
 
 export interface OctaneConfigOptions extends TypeCheckControlOptions {
