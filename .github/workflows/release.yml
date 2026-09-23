@@ -1,0 +1,482 @@
+name: Release
+
+# Mirrors NativeScript/NativeScript's secure_nx_release.yml: nx release bumps the
+# version, prepends the project CHANGELOG.md, commits and tags {version}-{project}
+# (nx.json release.releaseTag.pattern), publishes to npm through OIDC trusted
+# publishing with provenance, and posts a GitHub release from the changelog section.
+
+on:
+  push:
+    tags:
+      # Matches the Nx releaseTag pattern in nx.json: "{version}-{projectName}"
+      - '*-*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Exact version to release (e.g. 0.3.0-rc.0). Overrides release-type/preid; npm dist-tag is derived from it (0.3.0-rc.0 -> rc, 0.3.0 -> latest)'
+        required: false
+        type: string
+        default: ''
+      release-type:
+        description: "Version bump when 'version' is empty (patch/minor/major publish to npm 'latest'; prerelease uses 'preid')"
+        required: false
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - prerelease
+        default: patch
+      preid:
+        description: "Prerelease identifier (used only when release-type=prerelease and 'version' is empty; also becomes the npm dist-tag, e.g. next | canary)"
+        required: false
+        type: string
+        default: next
+      dry-run:
+        description: 'Run release steps without making changes (no git push, no publish)'
+        required: false
+        type: boolean
+        default: false
+      release-group:
+        description: 'Nx project to release: octane | vite-octane (empty = every package)'
+        required: false
+        type: string
+        default: ''
+
+concurrency:
+  # Avoid overlapping publishes on the same ref/branch
+  group: nx-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write # needed to push version commits and tags
+  id-token: write # required for npm provenance / trusted publishing (OIDC)
+
+jobs:
+  release:
+    name: Version and Publish (gated by environment)
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry-run) && 'npm-publish-dry-run' || 'npm-publish' }}
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository (full history for tagging)
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Update npm (required for OIDC trusted publishing)
+        run: |
+          npm install -g npm@^11.5.1
+          npm --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve release context
+        id: ctx
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_RELEASE_TYPE: ${{ inputs['release-type'] }}
+          INPUT_PREID: ${{ inputs.preid }}
+          INPUT_SCOPE: ${{ inputs['release-group'] }}
+          INPUT_DRY_RUN: ${{ inputs['dry-run'] }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            version="${INPUT_VERSION}"
+            release_type="${INPUT_RELEASE_TYPE}"
+            preid="${INPUT_PREID}"
+            scope="${INPUT_SCOPE}"
+            dry_run="${INPUT_DRY_RUN}"
+            mode="dispatch"
+
+            if [[ -n "$version" ]]; then
+              specifier="$version"
+              release_type=""
+              preid=""
+              if [[ "$version" == *-* ]]; then
+                # npm dist-tag is the alphabetic prerelease label (0.3.0-rc.0 -> rc); purely numeric labels fall back to next.
+                prerelease="${version#*-}"
+                dist_tag="${prerelease%%.*}"
+                if [[ "$dist_tag" =~ ^[0-9]+$ ]]; then
+                  dist_tag="next"
+                fi
+              else
+                dist_tag="latest"
+              fi
+            else
+              specifier="$release_type"
+              # npm dist-tag follows release type: prerelease -> preid, stable -> latest
+              if [[ "$release_type" == "prerelease" ]]; then
+                dist_tag="$preid"
+              else
+                preid=""
+                dist_tag="latest"
+              fi
+            fi
+          else
+            specifier=""
+            release_type=""
+            preid=""
+            dist_tag=""
+            scope=""
+            dry_run="false"
+            mode="tag"
+          fi
+
+          {
+            echo "mode=${mode}"
+            echo "specifier=${specifier}"
+            echo "release_type=${release_type}"
+            echo "preid=${preid}"
+            echo "dist_tag=${dist_tag}"
+            echo "scope=${scope}"
+            echo "dry_run=${dry_run}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Determine tag release project and dist-tag (tags)
+        id: taginfo
+        if: ${{ steps.ctx.outputs.mode == 'tag' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag_name="${GITHUB_REF_NAME}"
+
+          # Find the project by matching the tag suffix against the releaseable packages.
+          projects=$(npx nx show projects --projects "packages/*" --sep ' ')
+
+          best_match=""
+          best_len=0
+          for p in $projects; do
+            suffix="-${p}"
+            if [[ "$tag_name" == *"$suffix" ]]; then
+              if (( ${#p} > best_len )); then
+                best_match="$p"
+                best_len=${#p}
+              fi
+            fi
+          done
+
+          if [[ -z "$best_match" ]]; then
+            echo "Could not determine project from tag '$tag_name'. Expected '{version}-{projectName}'." >&2
+            exit 1
+          fi
+
+          version_part="${tag_name%-"$best_match"}"
+          if [[ "$version_part" == *-* ]]; then
+            dist_tag="next"
+          else
+            dist_tag="latest"
+          fi
+
+          {
+            echo "project=${best_match}"
+            echo "version=${version_part}"
+            echo "dist_tag=${dist_tag}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Configure git user for automated commits
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # The checkout above is pinned to the SHA resolved at dispatch time; by now (npm ci + setup)
+      # the branch may have moved, which makes the later release-commit push non-fast-forward.
+      # Re-sync to the branch tip before versioning.
+      - name: Sync to latest branch tip (dispatch)
+        if: ${{ steps.ctx.outputs.mode == 'dispatch' && !inputs.dry-run }}
+        run: |
+          git fetch origin "$GITHUB_REF_NAME"
+          git reset --hard "origin/$GITHUB_REF_NAME"
+
+      # Orchestrated release: bumps versions, generates changelogs, commits + tags in one shot.
+      # The orchestrator does not accept --git-* flags (config-driven only); push is handled in the next step.
+      # --skip-publish keeps publishing as a separate step below so the OIDC token-clearing logic still runs.
+      # A project with no prior release tag gets its changelog from its first commit (release.changelog.automaticFromRef in nx.json).
+      - name: nx release version + changelog (dispatch)
+        if: ${{ steps.ctx.outputs.mode == 'dispatch' && !inputs.dry-run }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          scope="${{ steps.ctx.outputs.scope }}"
+          projects_arg=()
+          if [[ -n "$scope" ]]; then
+            projects_arg=(--projects "$scope")
+          fi
+
+          preid="${{ steps.ctx.outputs.preid }}"
+          preid_arg=()
+          if [[ -n "$preid" ]]; then
+            preid_arg=(--preid "$preid")
+          fi
+
+          npx nx release "${{ steps.ctx.outputs.specifier }}" \
+            "${preid_arg[@]}" \
+            "${projects_arg[@]}" \
+            --skip-publish \
+            --verbose
+
+      # --atomic: if the branch push is rejected, the release tags are rejected with it,
+      # so a failed run leaves no orphaned tag behind and a plain re-dispatch is enough to retry.
+      - name: Push release commit and tags (dispatch)
+        if: ${{ steps.ctx.outputs.mode == 'dispatch' && !inputs.dry-run }}
+        run: git push --atomic --follow-tags origin HEAD
+
+      - name: nx release version + changelog (dispatch, dry-run)
+        if: ${{ steps.ctx.outputs.mode == 'dispatch' && inputs.dry-run }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          scope="${{ steps.ctx.outputs.scope }}"
+          projects_arg=()
+          if [[ -n "$scope" ]]; then
+            projects_arg=(--projects "$scope")
+          fi
+
+          preid="${{ steps.ctx.outputs.preid }}"
+          preid_arg=()
+          if [[ -n "$preid" ]]; then
+            preid_arg=(--preid "$preid")
+          fi
+
+          npx nx release "${{ steps.ctx.outputs.specifier }}" \
+            "${preid_arg[@]}" \
+            "${projects_arg[@]}" \
+            --skip-publish \
+            --verbose \
+            --dry-run
+
+      # BUILD: nx.json's preVersionCommand already built for the version step; build again
+      # here so the published dist reflects the committed version.
+      - name: Build projects (dispatch)
+        if: ${{ steps.ctx.outputs.mode == 'dispatch' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          scope="${{ steps.ctx.outputs.scope }}"
+          if [[ -n "$scope" ]]; then
+            npx nx run-many -t build --projects "$scope" --verbose
+          else
+            npx nx run-many -t build --projects "packages/*" --verbose
+          fi
+
+      # PUBLISH: OIDC trusted publishing (default). Avoid any lingering token auth.
+      - name: nx release publish (OIDC, dispatch)
+        if: ${{ steps.ctx.outputs.mode == 'dispatch' && steps.ctx.outputs.dry_run != 'true' && vars.USE_NPM_TOKEN != 'true' }}
+        shell: bash
+        env:
+          NPM_CONFIG_PROVENANCE: true
+          NODE_AUTH_TOKEN: ''
+        run: |
+          set -euo pipefail
+          unset NODE_AUTH_TOKEN
+          rm -f ~/.npmrc || true
+          if [[ -n "${NPM_CONFIG_USERCONFIG:-}" ]]; then
+            rm -f "$NPM_CONFIG_USERCONFIG" || true
+          fi
+
+          scope="${{ steps.ctx.outputs.scope }}"
+          projects_arg=()
+          if [[ -n "$scope" ]]; then
+            projects_arg=(--projects "$scope")
+          fi
+
+          npx nx release publish \
+            "${projects_arg[@]}" \
+            --tag "${{ steps.ctx.outputs.dist_tag }}" \
+            --access public \
+            --verbose
+
+      - name: nx release publish (OIDC, dispatch dry-run)
+        if: ${{ steps.ctx.outputs.mode == 'dispatch' && inputs.dry-run && vars.USE_NPM_TOKEN != 'true' }}
+        shell: bash
+        env:
+          NPM_CONFIG_PROVENANCE: true
+          NODE_AUTH_TOKEN: ''
+        run: |
+          set -euo pipefail
+          unset NODE_AUTH_TOKEN
+          rm -f ~/.npmrc || true
+          if [[ -n "${NPM_CONFIG_USERCONFIG:-}" ]]; then
+            rm -f "$NPM_CONFIG_USERCONFIG" || true
+          fi
+
+          scope="${{ steps.ctx.outputs.scope }}"
+          projects_arg=()
+          if [[ -n "$scope" ]]; then
+            projects_arg=(--projects "$scope")
+          fi
+
+          npx nx release publish \
+            "${projects_arg[@]}" \
+            --tag "${{ steps.ctx.outputs.dist_tag }}" \
+            --access public \
+            --verbose \
+            --dry-run
+
+      # PUBLISH: token fallback (only when explicitly enabled via repo/environment variable USE_NPM_TOKEN=true).
+      - name: nx release publish (token, dispatch)
+        if: ${{ steps.ctx.outputs.mode == 'dispatch' && steps.ctx.outputs.dry_run != 'true' && vars.USE_NPM_TOKEN == 'true' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+        run: |
+          set -euo pipefail
+          scope="${{ steps.ctx.outputs.scope }}"
+          projects_arg=()
+          if [[ -n "$scope" ]]; then
+            projects_arg=(--projects "$scope")
+          fi
+          npx nx release publish "${projects_arg[@]}" --tag "${{ steps.ctx.outputs.dist_tag }}" --access public --verbose
+
+      - name: nx release publish (token, dispatch dry-run)
+        if: ${{ steps.ctx.outputs.mode == 'dispatch' && inputs.dry-run && vars.USE_NPM_TOKEN == 'true' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+        run: |
+          set -euo pipefail
+          scope="${{ steps.ctx.outputs.scope }}"
+          projects_arg=()
+          if [[ -n "$scope" ]]; then
+            projects_arg=(--projects "$scope")
+          fi
+          npx nx release publish "${projects_arg[@]}" --tag "${{ steps.ctx.outputs.dist_tag }}" --access public --verbose --dry-run
+
+      # Tag-triggered publishing: publish the single package referenced by the tag, as committed.
+      - name: Build project before publish (tag)
+        if: ${{ steps.ctx.outputs.mode == 'tag' }}
+        run: npx nx build "${{ steps.taginfo.outputs.project }}" --verbose
+
+      - name: nx release publish (tag)
+        if: ${{ steps.ctx.outputs.mode == 'tag' && vars.USE_NPM_TOKEN != 'true' }}
+        shell: bash
+        env:
+          NPM_CONFIG_PROVENANCE: true
+          NODE_AUTH_TOKEN: ''
+        run: |
+          set -euo pipefail
+          unset NODE_AUTH_TOKEN
+          rm -f ~/.npmrc || true
+          if [[ -n "${NPM_CONFIG_USERCONFIG:-}" ]]; then
+            rm -f "$NPM_CONFIG_USERCONFIG" || true
+          fi
+
+          npx nx release publish \
+            --projects "${{ steps.taginfo.outputs.project }}" \
+            --tag "${{ steps.taginfo.outputs.dist_tag }}" \
+            --access public \
+            --verbose
+
+      - name: nx release publish (tag, token)
+        if: ${{ steps.ctx.outputs.mode == 'tag' && vars.USE_NPM_TOKEN == 'true' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+        run: |
+          npx nx release publish --projects "${{ steps.taginfo.outputs.project }}" --tag "${{ steps.taginfo.outputs.dist_tag }}" --access public --verbose
+
+      # Nx only writes CHANGELOG.md files (nx.json release.changelog has no createRelease),
+      # so GitHub releases are posted here. This must run after the tag push (creating a
+      # release for a tag GitHub doesn't have yet would auto-create it from the wrong
+      # commit) and after npm publish (so a GitHub API failure cannot block publishing —
+      # a red run here means only the release step needs manual recovery).
+      - name: Create GitHub releases (dispatch)
+        if: ${{ steps.ctx.outputs.mode == 'dispatch' && !inputs.dry-run }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          tags=$(git tag --points-at HEAD)
+          if [[ -z "$tags" ]]; then
+            echo "No release tags on HEAD; skipping GitHub release creation."
+            exit 0
+          fi
+
+          projects=$(npx nx show projects --projects "packages/*" --sep ' ')
+
+          for tag in $tags; do
+            # Tag format is {version}-{projectName} (nx.json release.releaseTag.pattern); take the
+            # longest project suffix so project names containing '-' resolve correctly.
+            best_match=""
+            best_len=0
+            for p in $projects; do
+              suffix="-${p}"
+              if [[ "$tag" == *"$suffix" ]] && (( ${#p} > best_len )); then
+                best_match="$p"
+                best_len=${#p}
+              fi
+            done
+            if [[ -z "$best_match" ]]; then
+              echo "Skipping tag '$tag' (no matching release project)."
+              continue
+            fi
+
+            version="${tag%-"$best_match"}"
+            root=$(npx nx show project "$best_match" --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).root))')
+            pkg=$(node -e "console.log(require('./${root}/package.json').name)")
+
+            if gh release view "$tag" --json id --jq .id >/dev/null 2>&1; then
+              echo "Release for '$tag' already exists; skipping."
+              continue
+            fi
+
+            notes_file="$(mktemp)"
+            awk -v h="## ${version} (" 'index($0, h) == 1 {found=1; next} /^## / {if (found) exit} found' "${root}/CHANGELOG.md" > "$notes_file"
+
+            flags=(--verify-tag --title "${pkg}@${version}")
+            if [[ "$version" == *-* ]]; then
+              flags+=(--prerelease)
+            elif [[ "$best_match" == "octane" ]]; then
+              # The repo's Latest badge stays on stable renderer releases; the plugin
+              # must not claim it just by being published later.
+              flags+=(--latest)
+            else
+              flags+=(--latest=false)
+            fi
+            if [[ -s "$notes_file" ]]; then
+              flags+=(--notes-file "$notes_file")
+            else
+              flags+=(--generate-notes)
+            fi
+
+            gh release create "$tag" "${flags[@]}"
+          done
+
+      - name: Summary
+        if: always()
+        run: |
+          mode="${{ steps.ctx.outputs.mode }}"
+
+          echo "Nx Release completed."
+          echo "- mode: ${mode}"
+          echo "- specifier: '${{ steps.ctx.outputs.specifier }}'"
+          echo "- release-type: '${{ steps.ctx.outputs.release_type }}'"
+          echo "- preid: '${{ steps.ctx.outputs.preid }}'"
+          echo "- dist-tag: ${{ steps.ctx.outputs.mode == 'tag' && steps.taginfo.outputs.dist_tag || steps.ctx.outputs.dist_tag }}"
+          echo "- scope: '${{ steps.ctx.outputs.scope }}'"
+          if [[ "$mode" == "tag" ]]; then
+            echo "- project: ${{ steps.taginfo.outputs.project }} ${{ steps.taginfo.outputs.version }}"
+          fi
+          echo "- dry-run: '${{ steps.ctx.outputs.dry_run }}'"

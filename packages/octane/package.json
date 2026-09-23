@@ -1,6 +1,9 @@
 {
   "name": "@nativescript-community/octane",
   "version": "0.2.1",
+  "nx": {
+    "name": "octane"
+  },
   "description": "Octane on NativeScript",
   "license": "MIT",
   "type": "module",
