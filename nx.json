@@ -35,8 +35,25 @@
   ],
   "analytics": false,
   "release": {
+    "projects": ["packages/*"],
+    "projectsRelationship": "independent",
     "version": {
-      "preVersionCommand": "npx nx run-many -t build"
+      "preVersionCommand": "npx nx run-many -t build --projects packages/*",
+      "updateDependents": "never"
+    },
+    "changelog": {
+      "workspaceChangelog": false,
+      "automaticFromRef": true,
+      "projectChangelogs": {
+        "renderOptions": {
+          "authors": true,
+          "commitReferences": true,
+          "versionTitleDate": true
+        }
+      }
+    },
+    "releaseTag": {
+      "pattern": "{version}-{projectName}"
     }
   },
   "targetDefaults": {
