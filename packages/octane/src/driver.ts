@@ -6,6 +6,8 @@ import {
   LayoutBase,
   ListView,
   Span,
+  TabView,
+  TabViewItem,
   TextBase,
   View,
   type ViewBase,
@@ -228,6 +230,13 @@ function addViewChild(
     parentView.content = view as View;
     return;
   }
+  // A tab view's `items` is derived from its node's children (`syncTabViewItems`):
+  // core rejects an item that has no view yet, and children attach after their parent.
+  if (parentView instanceof TabView && view instanceof TabViewItem) return;
+  if (parentView instanceof TabViewItem) {
+    parentView.view = view as View;
+    return;
+  }
   if (parentView instanceof FormattedString && view instanceof Span) {
     parentView.spans.splice(Math.min(index, parentView.spans.length), 0, view);
     return;
@@ -268,6 +277,12 @@ function removeViewChild(parentView: ViewBase | null, view: ViewBase): void {
     if (parentView.content === view) parentView.content = CLEARED;
     return;
   }
+  if (parentView instanceof TabView && view instanceof TabViewItem) return;
+  if (parentView instanceof TabViewItem) {
+    // Core never lets an item's view change, so the item is detached from it directly.
+    if (parentView.view === view) parentView._removeView(view);
+    return;
+  }
   if (parentView instanceof FormattedString && view instanceof Span) {
     const index = parentView.spans.indexOf(view);
     if (index !== -1) parentView.spans.splice(index, 1);
@@ -282,6 +297,53 @@ function removeViewChild(parentView: ViewBase | null, view: ViewBase): void {
   }
 }
 
+/**
+ * Mirror a tab view's children onto its `items`. Only items that already hold a view are
+ * listed: core throws for a view-less item, and an item's view arrives after the item.
+ * Core tears down the items it keeps whenever `items` changes (fixed in NativeScript
+ * 9.1.3, NativeScript/NativeScript#11446), so a batch must reach it as one assignment.
+ */
+function syncTabViewItems(node: HostNode): void {
+  const tabView = node.view;
+  if (!(tabView instanceof TabView)) return;
+  const items: TabViewItem[] = [];
+  for (const child of node.children) {
+    if (child.view instanceof TabViewItem && child.view.view)
+      items.push(child.view);
+  }
+  const current = tabView.items ?? [];
+  if (
+    current.length === items.length &&
+    current.every((item, i) => item === items[i])
+  )
+    return;
+  tabView.items = items;
+}
+
+/** Tab view nodes touched by each batch being applied, innermost last; synced when it ends. */
+const pendingTabViews: Set<HostNode>[] = [];
+
+function markTabView(node: HostNode | null): void {
+  if (node === null || !(node.view instanceof TabView)) return;
+  const pending = pendingTabViews[pendingTabViews.length - 1];
+  if (pending === undefined) syncTabViewItems(node);
+  else pending.add(node);
+}
+
+function flushTabViews(pending: Set<HostNode> | undefined): void {
+  if (pending === undefined) return;
+  for (const node of pending) syncTabViewItems(node);
+}
+
+/** The tab view node that a node's attachment can change the items of, if any. */
+function tabViewOwning(node: HostNode): HostNode | null {
+  const parent = node.parent;
+  if (parent === null) return null;
+  if (node.view instanceof TabViewItem) return parent;
+  if (parent.view instanceof TabViewItem) return parent.parent;
+  return null;
+}
+
 function detach(container: NativeScriptContainer, node: HostNode): void {
   const parent = node.parent;
   const siblings = childrenOf(container, parent);
@@ -289,6 +351,7 @@ function detach(container: NativeScriptContainer, node: HostNode): void {
   if (index !== -1) siblings.splice(index, 1);
   if (node.view === null) syncText(parent);
   else removeViewChild(hostViewOf(container, parent), node.view);
+  if (node.view instanceof TabViewItem) markTabView(parent);
   node.parent = null;
 }
 
@@ -306,6 +369,7 @@ function attach(container: NativeScriptContainer, node: HostNode): void {
     if (sibling.view !== null) index++;
   }
   addViewChild(parentView, node.view, index);
+  markTabView(tabViewOwning(node));
 }
 
 function insert(
@@ -405,6 +469,7 @@ function recreateView(container: NativeScriptContainer, node: HostNode): void {
     if (child.view !== null) addViewChild(view, child.view, index++);
   }
   syncText(node);
+  markTabView(node);
   attach(container, node);
 }
 
@@ -523,11 +588,16 @@ export const nativeScriptDriver: UniversalHostDriver<
     return {
       apply() {
         applyingDepth++;
+        pendingTabViews.push(new Set());
         try {
           for (const command of batch.commands)
             applyCommand(container, command);
         } finally {
-          applyingDepth--;
+          try {
+            flushTabViews(pendingTabViews.pop());
+          } finally {
+            applyingDepth--;
+          }
         }
       },
       // Nothing is staged ahead of `apply`, so there is nothing to release.
