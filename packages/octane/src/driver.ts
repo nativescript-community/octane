@@ -4,6 +4,7 @@ import {
   type EventData,
   FormattedString,
   LayoutBase,
+  ListView,
   Span,
   TextBase,
   View,
@@ -24,6 +25,11 @@ import {
   eventNameFor,
   onElementReplaced,
 } from './elements.js';
+import {
+  releaseListView,
+  setRenderItem,
+  type RenderItem,
+} from './list-view.js';
 
 /** `#text` nodes carry no view; the driver folds them into the parent's `text`. */
 const TEXT = '#text';
@@ -112,7 +118,13 @@ function applyProps(
     syncText(node.parent);
     return;
   }
-  for (const name in props) setProp(node, node.view, name, props[name]);
+  // A list's cell renderer must be in place before `items` reloads the cells.
+  if ('renderItem' in props) {
+    setProp(node, node.view, 'renderItem', props.renderItem);
+  }
+  for (const name in props) {
+    if (name !== 'renderItem') setProp(node, node.view, name, props[name]);
+  }
 }
 
 /**
@@ -144,6 +156,14 @@ function setProp(
   }
   if (name === 'style') {
     applyStyle(view, value);
+    return;
+  }
+  if (name === 'renderItem' && view instanceof ListView) {
+    setRenderItem(
+      view,
+      (value as RenderItem | null | undefined) ?? null,
+      createNativeScriptRoot,
+    );
     return;
   }
   // Core raises `<name>Change` for a script write exactly as for a user
@@ -312,9 +332,10 @@ function insert(
  * listener — which is not yet active. Events arriving mid-apply are deferred
  * to a microtask (after the commit finishes, when the listener is live), and
  * a dispatch to a listener that is gone is dropped rather than allowed to
- * abort the rest of a batch.
+ * abort the rest of a batch. A cell root committing inside a list's batch
+ * nests an apply, so this is a depth rather than a flag.
  */
-let applyingBatch = false;
+let applyingDepth = 0;
 
 function setEvent(
   container: NativeScriptContainer,
@@ -343,7 +364,7 @@ function setEvent(
         console.warn(`NativeScript driver: dropped ${type} event:`, error);
       }
     };
-    if (applyingBatch) Promise.resolve().then(fire);
+    if (applyingDepth > 0) Promise.resolve().then(fire);
     else fire();
   };
   node.listeners.set(type, handler);
@@ -354,6 +375,7 @@ function disposeListeners(node: HostNode): void {
   const view = node.view;
   if (view !== null) {
     for (const [type, handler] of node.listeners) view.off(type, handler);
+    if (view instanceof ListView) releaseListView(view);
   }
   node.listeners.clear();
 }
@@ -371,6 +393,7 @@ function recreateView(container: NativeScriptContainer, node: HostNode): void {
   }
   if (parentView !== null) removeViewChild(parentView, previous);
   for (const [type, handler] of node.listeners) previous.off(type, handler);
+  if (previous instanceof ListView) releaseListView(previous);
 
   const view = instantiate(node.type);
   node.view = view;
@@ -499,12 +522,12 @@ export const nativeScriptDriver: UniversalHostDriver<
     }
     return {
       apply() {
-        applyingBatch = true;
+        applyingDepth++;
         try {
           for (const command of batch.commands)
             applyCommand(container, command);
         } finally {
-          applyingBatch = false;
+          applyingDepth--;
         }
       },
       // Nothing is staged ahead of `apply`, so there is nothing to release.

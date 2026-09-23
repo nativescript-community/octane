@@ -131,6 +131,25 @@ Props are view properties, not attributes: the driver assigns them onto the inst
 
 Handlers are `on` + the NativeScript event name (`onLoaded`, `onItemTap`), with the web spellings aliased: `onTap`/`onClick`/`onPress` → `tap`, `onDoubleTap`, `onLongPress`, `onChange` → `textChange`, `onSubmit` → `returnPress`.
 
+### Lists
+
+`listview` recycles a fixed pool of native cells, so its rows are not children of the element. Give it `renderItem` and the driver owns the cells: each one hosts its own Octane root, bound to `items[index]` when the table asks for the row and rebound in place — diffed, not remounted — when the cell is recycled for another row, when `items` changes, or when `renderItem` changes identity.
+
+```tsx
+<listview
+  items={rows}
+  renderItem={(row, index) => <Row row={row} selected={index === selected} />}
+  onItemTap={(e) => setSelected(e.index)}
+/>
+```
+
+- The value passed is always the current `items[index]` — a plain array, an `ItemsSource`, or an `ObservableArray` — read when the cell is bound, never a snapshot from an earlier wave.
+- A new `items` array reloads the table (core's `items` property does that), as does mutating an `ObservableArray`. NativeScript re-prepares every visible cell on each layout pass; a cell whose row, item and `renderItem` are unchanged is skipped.
+- A closure over parent state — the `selected` above — reaches the rows because a changed `renderItem` re-renders the live cells; memoize it if the parent renders often for reasons the rows do not care about.
+- Hooks inside `renderItem` belong to the cell, not the row: a recycled cell keeps its state across rows, so key row state by the item.
+- `renderItem` takes over `itemTemplate`. `onItemLoading` still fires after the cell is bound, but must not assign `args.view`.
+- Sectioned lists and `itemTemplateSelector` are not managed; use them with plain NativeScript templates.
+
 ### Plugin views
 
 Register a tag for any `ViewBase` subclass, and extend the JSX types from a `.d.ts` in the app:

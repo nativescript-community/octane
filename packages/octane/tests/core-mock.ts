@@ -123,6 +123,69 @@ export class MockActionBar extends MockView {
   titleView: MockView | null = null;
 }
 
+export interface MockCell {
+  view: MockView | null;
+  index: number;
+}
+
+/**
+ * The recycling contract of core's ListView: a changed `items` reloads, a
+ * reload re-prepares every live cell, a new cell's view comes from
+ * `itemTemplate`, and `itemLoading` may swap `args.view`.
+ */
+export class MockListView extends MockView {
+  #items: unknown = null;
+  itemTemplate: unknown = null;
+  /** Live cells, like a table's visible rows. */
+  readonly cells: MockCell[] = [];
+  reloads = 0;
+
+  get items(): unknown {
+    return this.#items;
+  }
+
+  set items(value: unknown) {
+    if (value === this.#items) return;
+    this.#items = value;
+    this.refresh();
+  }
+
+  refresh(): void {
+    this.reloads++;
+    for (const cell of this.cells) this.prepare(cell);
+  }
+
+  /** Bring rows into view, one new cell each. */
+  show(...indices: number[]): void {
+    for (const index of indices) {
+      const cell: MockCell = { view: null, index };
+      this.cells.push(cell);
+      this.prepare(cell);
+    }
+  }
+
+  /** Recycle a live cell for another row, as a table does while scrolling. */
+  reuse(position: number, index: number): void {
+    const cell = this.cells[position];
+    cell.index = index;
+    this.prepare(cell);
+  }
+
+  private prepare(cell: MockCell): void {
+    if (cell.view === null && typeof this.itemTemplate === 'function') {
+      cell.view = (this.itemTemplate as () => MockView)();
+    }
+    const args = {
+      eventName: 'itemLoading',
+      object: this,
+      index: cell.index,
+      view: cell.view,
+    };
+    this.notify(args);
+    cell.view = args.view;
+  }
+}
+
 const LAYOUTS = [
   'AbsoluteLayout',
   'DockLayout',
@@ -142,7 +205,6 @@ const LEAVES = [
   'DatePicker',
   'Image',
   'ListPicker',
-  'ListView',
   'NavigationButton',
   'Placeholder',
   'Progress',
@@ -167,6 +229,7 @@ export function createCoreMock(): Record<string, unknown> {
     Span: MockSpan,
     FormattedString: MockFormattedString,
     ActionBar: MockActionBar,
+    ListView: MockListView,
     unsetValue: Symbol('unsetValue'),
   };
   const derive = (names: readonly string[], Base: new () => object): void => {
