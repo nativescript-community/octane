@@ -31,7 +31,11 @@ export class MockViewBase {
     this.handlers.get(type)?.delete(handler);
   }
 
-  notify(data: { eventName: string; object?: unknown }): void {
+  notify(data: {
+    eventName: string;
+    object?: unknown;
+    [field: string]: unknown;
+  }): void {
     for (const handler of [...(this.handlers.get(data.eventName) ?? [])])
       handler(data);
   }
@@ -85,8 +89,26 @@ export class MockContentView extends MockView {
 }
 
 export class MockTextBase extends MockView {
-  text = '';
+  #text = '';
   formattedText: unknown = null;
+
+  get text(): string {
+    return this.#text;
+  }
+
+  /** Like core's `Property`: a changed write raises `textChange`, whoever wrote it. */
+  set text(value: string) {
+    const oldValue = this.#text;
+    if (oldValue === value) return;
+    this.#text = value;
+    this.notify({
+      eventName: 'textChange',
+      object: this,
+      propertyName: 'text',
+      value,
+      oldValue,
+    });
+  }
 }
 
 export class MockSpan {
