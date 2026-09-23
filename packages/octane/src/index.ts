@@ -23,4 +23,5 @@ export {
   registerElement,
 } from './elements.js';
 export type { ElementConstructor } from './elements.js';
+export type { RenderItem } from './list-view.js';
 export { NATIVESCRIPT_RENDERER_ID } from './config.js';

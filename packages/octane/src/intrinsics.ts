@@ -115,6 +115,17 @@ export interface CommonAttributes {
   order?: number | string;
 }
 
+export interface ListViewAttributes {
+  /**
+   * Renders one row into a recycled cell. The cell keeps its own Octane
+   * root: it is diffed in place when the cell is rebound to another row,
+   * when `items` changes, or when this function's identity changes, and the
+   * value passed is always the current `items[index]`. Takes precedence over
+   * `itemTemplate`.
+   */
+  renderItem?: (item: any, index: number) => NativeScriptNode;
+}
+
 export interface OctaneAttributes<TInstance> {
   key?: string | number;
   ref?: Ref<TInstance> | readonly Ref<TInstance>[];
@@ -155,7 +166,7 @@ export interface NativeScriptElements {
   image: Attributes<typeof NS.Image>;
   label: Attributes<typeof NS.Label>;
   listpicker: Attributes<typeof NS.ListPicker>;
-  listview: Attributes<typeof NS.ListView>;
+  listview: Attributes<typeof NS.ListView> & ListViewAttributes;
   navigationbutton: Attributes<typeof NS.NavigationButton>;
   page: Attributes<typeof NS.Page>;
   placeholder: Attributes<typeof NS.Placeholder>;
