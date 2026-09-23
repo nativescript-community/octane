@@ -14,6 +14,8 @@ import {
   MockContentView,
   MockFormattedString,
   MockLayoutBase,
+  MockTabView,
+  MockTabViewItem,
   MockTextBase,
   type MockView,
 } from '../tests/core-mock.js';
@@ -246,6 +248,136 @@ describe('nativeScriptDriver', () => {
 
     apply(remove(2, 1));
     expect(scroll.content).toBeNull();
+  });
+
+  it('hosts tab view items, each taking its child as the item view', () => {
+    const { apply, view } = mount(new MockLayoutBase());
+    apply(
+      create(1, 'tabview'),
+      create(2, 'tabviewitem', { title: 'Home' }),
+      create(3, 'stacklayout'),
+      create(4, 'tabviewitem', { title: 'Demos' }),
+      create(5, 'label'),
+      insert(1),
+      insert(2, 1),
+      insert(3, 2),
+      insert(4, 1),
+      insert(5, 4),
+    );
+    const tabView = view<MockTabView>(1);
+    const home = view<MockTabViewItem>(2);
+    const demos = view<MockTabViewItem>(4);
+    expect(tabView.items).toEqual([home, demos]);
+    expect(home.view).toBe(view(3));
+    expect(demos.view).toBe(view(5));
+    expect(home.parent).toBe(tabView);
+  });
+
+  it('assigns the items once per batch, after every child has attached', () => {
+    const { apply, view } = mount(new MockLayoutBase());
+    apply(
+      create(1, 'tabview'),
+      create(2, 'tabviewitem'),
+      create(3, 'label'),
+      create(4, 'tabviewitem'),
+      create(5, 'label'),
+      insert(1),
+      insert(2, 1),
+      insert(3, 2),
+      insert(4, 1),
+      insert(5, 4),
+    );
+    const tabView = view<MockTabView>(1);
+    expect(tabView.assignments).toBe(1);
+    expect(tabView.items).toEqual([view(2), view(4)]);
+
+    apply(
+      create(6, 'tabviewitem'),
+      create(7, 'label'),
+      insert(6, 1),
+      insert(7, 6),
+    );
+    expect(tabView.assignments).toBe(2);
+    expect(tabView.items).toEqual([view(2), view(4), view(6)]);
+  });
+
+  it('lists an item only once it holds a view', () => {
+    const { apply, view } = mount(new MockLayoutBase());
+    apply(
+      create(1, 'tabview'),
+      create(2, 'tabviewitem'),
+      insert(1),
+      insert(2, 1),
+    );
+    expect(view<MockTabView>(1).items ?? []).toEqual([]);
+
+    apply(create(3, 'label'), insert(3, 2));
+    expect(view<MockTabView>(1).items).toEqual([view(2)]);
+  });
+
+  it('keeps items in node order and drops removed ones', () => {
+    const { apply, view } = mount(new MockLayoutBase());
+    apply(
+      create(1, 'tabview'),
+      create(2, 'tabviewitem'),
+      create(3, 'label'),
+      create(4, 'tabviewitem'),
+      create(5, 'label'),
+      insert(1),
+      insert(2, 1),
+      insert(3, 2),
+      insert(4, 1, 2),
+      insert(5, 4),
+    );
+    expect(view<MockTabView>(1).items).toEqual([view(4), view(2)]);
+
+    apply(remove(4, 1));
+    expect(view<MockTabView>(1).items).toEqual([view(2)]);
+    expect(view<MockTabViewItem>(4).parent).toBeNull();
+  });
+
+  it('leaves the items untouched when a re-applied batch changes nothing', () => {
+    const { apply, view } = mount(new MockLayoutBase());
+    apply(
+      create(1, 'tabview'),
+      create(2, 'tabviewitem'),
+      create(3, 'label'),
+      insert(1),
+      insert(2, 1),
+      insert(3, 2),
+    );
+    const items = view<MockTabView>(1).items;
+
+    apply(update(2, { title: 'Home' }));
+
+    expect(view<MockTabView>(1).items).toBe(items);
+  });
+
+  it('recreates a tab view with its items when its element class is replaced', () => {
+    const { apply, host, view } = mount(new MockLayoutBase());
+    apply(
+      create(1, 'tabview'),
+      create(2, 'tabviewitem'),
+      create(3, 'label'),
+      insert(1),
+      insert(2, 1),
+      insert(3, 2),
+    );
+    const previous = view<MockTabView>(1);
+
+    class ReplacedTabView extends MockTabView {}
+    registerElement(
+      'tabview',
+      ReplacedTabView as unknown as ElementConstructor,
+    );
+
+    const tabView = view<MockTabView>(1);
+    expect(tabView).not.toBe(previous);
+    expect(tabView).toBeInstanceOf(ReplacedTabView);
+    expect(host.children).toEqual([tabView]);
+    expect(tabView.items).toEqual([view(2)]);
+    expect(view<MockTabViewItem>(2).parent).toBe(tabView);
+    registerElement('tabview', MockTabView as unknown as ElementConstructor);
   });
 
   it('assigns hostSlot children to the parent property', () => {

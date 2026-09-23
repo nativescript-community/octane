@@ -123,6 +123,56 @@ export class MockActionBar extends MockView {
   titleView: MockView | null = null;
 }
 
+/** Core's `TabViewItem.view`: set once, and never replaced. */
+export class MockTabViewItem extends MockViewBase {
+  #view: MockView | null = null;
+  title: unknown = undefined;
+
+  get view(): MockView | null {
+    return this.#view;
+  }
+
+  set view(value: MockView | null) {
+    if (this.#view === value) return;
+    if (this.#view !== null) {
+      throw new Error(
+        'Changing the view of an already loaded TabViewItem is not currently supported.',
+      );
+    }
+    this.#view = value;
+    if (value !== null) value.parent = this;
+  }
+
+  _removeView(view: MockViewBase): void {
+    if (view.parent !== this)
+      throw new Error('View not added to this instance.');
+    view.parent = null;
+  }
+}
+
+/** Core's `TabView.items`: every item needs a view, and a changed array re-parents them. */
+export class MockTabView extends MockView {
+  #items: MockTabViewItem[] | null = null;
+  /** How many times `items` was assigned; each assignment costs a core lifecycle pass. */
+  assignments = 0;
+
+  get items(): MockTabViewItem[] | null {
+    return this.#items;
+  }
+
+  set items(value: MockTabViewItem[] | null) {
+    this.assignments++;
+    for (const item of value ?? []) {
+      if (!item.view) throw new Error('TabViewItem must have a view.');
+    }
+    for (const item of this.#items ?? []) {
+      if (!value?.includes(item)) item.parent = null;
+    }
+    this.#items = value;
+    for (const item of value ?? []) item.parent = this;
+  }
+}
+
 export interface MockCell {
   view: MockView | null;
   index: number;
@@ -213,8 +263,6 @@ const LEAVES = [
   'SegmentedBarItem',
   'Slider',
   'Switch',
-  'TabView',
-  'TabViewItem',
   'TimePicker',
   'WebView',
 ];
@@ -230,6 +278,8 @@ export function createCoreMock(): Record<string, unknown> {
     FormattedString: MockFormattedString,
     ActionBar: MockActionBar,
     ListView: MockListView,
+    TabView: MockTabView,
+    TabViewItem: MockTabViewItem,
     unsetValue: Symbol('unsetValue'),
   };
   const derive = (names: readonly string[], Base: new () => object): void => {
