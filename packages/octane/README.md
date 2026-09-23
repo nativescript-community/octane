@@ -53,6 +53,29 @@ octaneConfig(
 }
 ```
 
+### Validation
+
+The stock renderer carries a `validation` block the compiler enforces on the modules it owns: the DOM globals no NativeScript runtime provides (`document`, `window`, `navigator`, `location`, `history`, `localStorage`, `sessionStorage`, `HTMLElement`, `Element`, `Node`, `DOMParser`, `MutationObserver`, `ResizeObserver`, `IntersectionObserver`) and the DOM-side imports (`octane/dom-bindings`, `octane/dom-binding-program`, `octane/hydration`, `react-dom`, each covering its subpaths). A `.tsx` that reaches for one fails to compile with the file and line, instead of failing — or silently doing nothing — on device. What core polyfills stays allowed: `fetch`, `XMLHttpRequest`, `alert`, `confirm`, `matchMedia`, `requestAnimationFrame`, `crypto`, `TextEncoder`, `Blob`, `FormData`, and so on, as does `WebSocket`, which apps polyfill.
+
+Two limits to know: the check covers the modules a renderer rule matches, and a rule can only select `.tsx` for this renderer, so a plain `.ts` helper is not checked; and the check is static, so a computed `globalThis['document']` passes. Each list given to `nativeScriptRenderers` replaces the default one, and `false` turns the check off:
+
+```ts
+import {
+  nativeScriptRendererValidation,
+  nativeScriptRenderers,
+} from '@nativescript-community/octane/config';
+
+nativeScriptRenderers({
+  validation: {
+    forbiddenGlobals: [
+      ...nativeScriptRendererValidation.forbiddenGlobals,
+      'CustomEvent',
+    ],
+  },
+});
+nativeScriptRenderers({ validation: false });
+```
+
 The entry mounts a root into a view the app owns. One root per window keeps a second iPad scene or a CarPlay window on the same component wrapper, so a hot update reaches all of them:
 
 ```ts
