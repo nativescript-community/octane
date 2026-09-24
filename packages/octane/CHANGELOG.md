@@ -1,3 +1,13 @@
+## 0.2.3 (2026-09-24)
+
+### 🩹 Fixes
+
+- normalize class prop values ([#11](https://github.com/nativescript-community/octane/pull/11))
+
+### ❤️ Thank You
+
+- Alec Larson @aleclarson
+
 ## 0.2.2 (2026-09-23)
 
 ### 🚀 Features
