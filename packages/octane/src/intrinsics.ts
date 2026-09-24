@@ -82,10 +82,19 @@ export interface CommonEvents<TInstance> {
   onBlur?: (event: NSEventData<TInstance>) => void;
 }
 
+/** Values accepted by the driver's `className` and `class` props. */
+export type ClassValue =
+  | string
+  | boolean
+  | null
+  | undefined
+  | readonly ClassValue[]
+  | { readonly [className: string]: unknown };
+
 export interface CommonAttributes {
   /** Resolved against `app.css`. */
-  className?: string;
-  class?: string;
+  className?: ClassValue;
+  class?: ClassValue;
   /** A string is parsed as inline CSS; an object is assigned onto `view.style`. */
   style?: string | Partial<NS.Style>;
 
