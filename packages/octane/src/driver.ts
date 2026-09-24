@@ -153,7 +153,9 @@ function setProp(
   if (EVENT_PROP.test(name)) return;
   if (name === 'className' || name === 'class') {
     view.className =
-      value == null || value === unsetValue ? unsetValue : String(value);
+      value == null || value === unsetValue
+        ? unsetValue
+        : normalizeClass(value);
     return;
   }
   if (name === 'style') {
@@ -178,6 +180,19 @@ function setProp(
   } finally {
     if (listening) node.muted.delete(echo);
   }
+}
+
+// `class`/`className` compose clsx-style on the DOM renderer; join arrays
+// with spaces so NativeScript's class selectors can match each class.
+function normalizeClass(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value))
+    return value.map(normalizeClass).filter(Boolean).join(' ');
+  if (value && typeof value === 'object')
+    return Object.keys(value)
+      .filter((key) => (value as Record<string, unknown>)[key])
+      .join(' ');
+  return '';
 }
 
 function applyStyle(view: ViewBase, value: unknown): void {
