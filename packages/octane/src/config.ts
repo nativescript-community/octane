@@ -10,7 +10,7 @@ export const NATIVESCRIPT_RENDERER_ID = 'nativescript';
 
 /**
  * Source restrictions the compiler enforces on the modules this renderer
- * owns. A rule can only select `.tsx` for this renderer (see
+ * owns. A rule can only select `.tsx` and `.tsrx` for this renderer (see
  * `nativeScriptRenderers`), so plain `.ts` helpers are not checked. Only
  * names no NativeScript runtime provides: core polyfills
  * `fetch`, `XMLHttpRequest`, `alert`, `confirm`, `matchMedia`,
@@ -57,7 +57,7 @@ export const nativeScriptRenderer = {
 } as const;
 
 export interface NativeScriptRenderersOptions {
-  /** Glob of the modules the renderer compiles. Defaults to `src/**\/*.tsx`. */
+  /** Glob of the modules the renderer compiles. Defaults to `src/**\/*.{tsx,tsrx}`. */
   include?: string;
   /**
    * Lists merged over `nativeScriptRendererValidation` (a list given here
@@ -68,8 +68,8 @@ export interface NativeScriptRenderersOptions {
 
 /**
  * The renderer registry `@octanejs/vite-plugin` reads. The renderer is scoped
- * to `.tsx` by rule rather than set as the default so plain `.ts` modules
- * stay unowned: a `server: 'unsupported'` renderer cannot own them, and the
+ * to `.tsx` and `.tsrx` by rule rather than set as the default so plain `.ts`
+ * modules stay unowned: a `server: 'unsupported'` renderer cannot own them, and the
  * compiler rejects a config whose rule selects one.
  */
 export function nativeScriptRenderers(
@@ -81,7 +81,7 @@ export function nativeScriptRenderers(
     },
     rules: [
       {
-        include: options.include ?? 'src/**/*.tsx',
+        include: options.include ?? 'src/**/*.{tsx,tsrx}',
         renderer: NATIVESCRIPT_RENDERER_ID,
       },
     ],

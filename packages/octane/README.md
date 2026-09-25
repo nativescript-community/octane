@@ -31,7 +31,7 @@ import { octaneConfig } from '@nativescript-community/vite-octane';
 export default defineConfig(({ mode }) => octaneConfig({ mode }));
 ```
 
-`octaneConfig` compiles `src/**/*.tsx` for this renderer by default. To change the scope, pass the registry yourself:
+`octaneConfig` compiles `src/**/*.tsx` and `src/**/*.tsrx` for this renderer by default. To change the scope, pass the registry yourself:
 
 ```ts
 import { nativeScriptRenderers } from '@nativescript-community/octane/config';
@@ -53,11 +53,24 @@ octaneConfig(
 }
 ```
 
+### `.tsrx` modules
+
+A [TSRX](https://tsrx.dev) component under `src/` compiles for this renderer like a `.tsx` one. Type checking is the difference: the Octane compiler generates the TypeScript that `tsrx-tsc` and the TSRX language server check, and it names `octane` as the JSX import source unless the module names one itself, which types `<label>` and friends as DOM elements. Open every `.tsrx` module with the renderer's pragma so it is checked against the NativeScript intrinsics:
+
+```tsrx
+/** @jsxImportSource @nativescript-community/octane */
+export function Greeting({ name }: { name: string }) @{
+  <label text={`Hello, ${name}`} />
+}
+```
+
+`@nativescript/vite` runs the build-time type check through `tsrx-tsc` when `@tsrx/typescript-plugin` is installed and a module imports `.tsrx` files, with the same platform file selection as the regular check.
+
 ### Validation
 
 The stock renderer carries a `validation` block the compiler enforces on the modules it owns: the DOM globals no NativeScript runtime provides (`document`, `window`, `navigator`, `location`, `history`, `localStorage`, `sessionStorage`, `HTMLElement`, `Element`, `Node`, `DOMParser`, `MutationObserver`, `ResizeObserver`, `IntersectionObserver`) and the DOM-side imports (`octane/dom-bindings`, `octane/dom-binding-program`, `octane/hydration`, `react-dom`, each covering its subpaths). A `.tsx` that reaches for one fails to compile with the file and line, instead of failing — or silently doing nothing — on device. What core polyfills stays allowed: `fetch`, `XMLHttpRequest`, `alert`, `confirm`, `matchMedia`, `requestAnimationFrame`, `crypto`, `TextEncoder`, `Blob`, `FormData`, and so on, as does `WebSocket`, which apps polyfill.
 
-Two limits to know: the check covers the modules a renderer rule matches, and a rule can only select `.tsx` for this renderer, so a plain `.ts` helper is not checked; and the check is static, so a computed `globalThis['document']` passes. Each list given to `nativeScriptRenderers` replaces the default one, and `false` turns the check off:
+Two limits to know: the check covers the modules a renderer rule matches, and a rule can only select `.tsx` and `.tsrx` for this renderer, so a plain `.ts` helper is not checked; and the check is static, so a computed `globalThis['document']` passes. Each list given to `nativeScriptRenderers` replaces the default one, and `false` turns the check off:
 
 ```ts
 import {

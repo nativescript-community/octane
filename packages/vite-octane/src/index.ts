@@ -32,8 +32,9 @@ export interface OctaneConfigOptions extends TypeCheckControlOptions {
   /**
    * Options for `@octanejs/vite-plugin`. A NativeScript renderer is not one
    * of Octane's built-ins, so `renderers` defaults to the registry of
-   * `@nativescript-community/octane`, which compiles `src/**\/*.tsx` for its
-   * NativeScript driver; pass your own to change the scope or the renderer.
+   * `@nativescript-community/octane`, which compiles `src/**\/*.{tsx,tsrx}`
+   * for its NativeScript driver; pass your own to change the scope or the
+   * renderer.
    */
   octane?: OctanePluginOptions;
 }

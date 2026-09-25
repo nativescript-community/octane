@@ -20,7 +20,7 @@ import { octaneConfig } from '@nativescript-community/vite-octane';
 export default defineConfig(({ mode }) => octaneConfig({ mode }));
 ```
 
-A NativeScript renderer is not one of Octane's built-ins, so `octaneConfig` hands `@octanejs/vite-plugin` the registry from `@nativescript-community/octane/config`, scoped to `src/**/*.tsx`. Pass `octane.renderers` yourself to change the scope:
+A NativeScript renderer is not one of Octane's built-ins, so `octaneConfig` hands `@octanejs/vite-plugin` the registry from `@nativescript-community/octane/config`, scoped to `src/**/*.{tsx,tsrx}`. Pass `octane.renderers` yourself to change the scope:
 
 ```ts
 import { nativeScriptRenderers } from '@nativescript-community/octane/config';

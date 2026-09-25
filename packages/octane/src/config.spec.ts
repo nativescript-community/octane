@@ -1,4 +1,7 @@
 import { compile } from 'octane/compiler';
+// octane ships no typings for this subpath.
+// @ts-expect-error
+import { resolveRendererForFile } from 'octane/compiler/renderers';
 import { describe, expect, it } from 'vitest';
 import {
   NATIVESCRIPT_RENDERER_ID,
@@ -84,14 +87,22 @@ describe('nativeScriptRendererValidation', () => {
 });
 
 describe('nativeScriptRenderers', () => {
-  it('scopes the renderer to .tsx modules by default', () => {
+  it('scopes the renderer to .tsx and .tsrx modules by default', () => {
     const config = nativeScriptRenderers();
     expect(config.registry[NATIVESCRIPT_RENDERER_ID]).toBe(
       nativeScriptRenderer,
     );
     expect(config.rules).toEqual([
-      { include: 'src/**/*.tsx', renderer: NATIVESCRIPT_RENDERER_ID },
+      { include: 'src/**/*.{tsx,tsrx}', renderer: NATIVESCRIPT_RENDERER_ID },
     ]);
+    for (const file of ['/src/App.tsx', '/src/components/Greeting.tsrx']) {
+      expect(resolveRendererForFile(config, file).id).toBe(
+        NATIVESCRIPT_RENDERER_ID,
+      );
+    }
+    expect(resolveRendererForFile(config, '/src/state/store.ts').id).not.toBe(
+      NATIVESCRIPT_RENDERER_ID,
+    );
   });
 
   it('merges a validation override over the defaults and accepts false', () => {
