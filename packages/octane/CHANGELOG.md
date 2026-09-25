@@ -1,3 +1,13 @@
+## 0.2.4 (2026-09-25)
+
+### 🩹 Fixes
+
+- **octane:** compile .tsrx modules for the NativeScript renderer by default ([#12](https://github.com/nativescript-community/octane/pull/12))
+
+### ❤️ Thank You
+
+- Nathan Walker
+
 ## 0.2.3 (2026-09-24)
 
 ### 🩹 Fixes
