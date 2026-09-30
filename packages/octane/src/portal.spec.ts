@@ -8,6 +8,7 @@ import {
   universalContext,
   universalKey,
   universalPlan,
+  universalProps,
   universalValue,
   useContext,
   type UniversalHostCommand,
@@ -213,6 +214,113 @@ describe('portals', () => {
 
     root.unmount();
     expect(targetB.children).toHaveLength(0);
+  });
+
+  /**
+   * A portal may target the root host itself. The entry tracks only portal
+   * children while root children use `container.children`, and both write to
+   * the same native view — so portal children take the tail, keeping ordinary
+   * children ahead of them however the tree is updated.
+   */
+  it('keeps portal children after ordinary children when the target is the root host', () => {
+    const Scene = defineUniversalComponent(
+      RID,
+      (props: { second: boolean; target: core.LayoutBase }) => [
+        universalValue(labelPlan, ['first']),
+        props.second ? universalValue(labelPlan, ['second']) : null,
+        createPortal(universalValue(labelPlan, ['portal']), props.target),
+      ],
+    );
+
+    const host = new core.StackLayout() as unknown as MockLayoutBase;
+    const root = renderRoot(host);
+
+    root.render(Scene, { second: false, target: host as never });
+    expect(labels(host).map((label) => label.text)).toEqual([
+      'first',
+      'portal',
+    ]);
+
+    // Ordinary children inserted or removed later keep their order and stay
+    // ahead of the portal children.
+    root.render(Scene, { second: true, target: host as never });
+    expect(labels(host).map((label) => label.text)).toEqual([
+      'first',
+      'second',
+      'portal',
+    ]);
+    root.render(Scene, { second: false, target: host as never });
+    expect(labels(host).map((label) => label.text)).toEqual([
+      'first',
+      'portal',
+    ]);
+
+    root.unmount();
+    expect(host.children).toHaveLength(0);
+  });
+
+  /**
+   * A portal may also target a layout this root mounted — its view passes the
+   * ownership check and already hosts the node's ordinary children, which are
+   * tracked on the host node rather than the portal entry. Portal children
+   * again take the tail.
+   */
+  it('keeps portal children after the ordinary children of a host layout target', () => {
+    const layoutPlan = universalPlan(RID, {
+      kind: 'host',
+      type: 'gridlayout',
+      propsSlot: 0,
+    });
+    const Scene = defineUniversalComponent(
+      RID,
+      (props: { second: boolean; target: core.LayoutBase | null }) => [
+        universalValue(layoutPlan, [
+          universalProps(
+            [],
+            [
+              universalValue(labelPlan, ['inner']),
+              ...(props.second ? [universalValue(labelPlan, ['second'])] : []),
+            ],
+          ),
+        ]),
+        props.target === null
+          ? null
+          : createPortal(universalValue(labelPlan, ['portal']), props.target),
+      ],
+    );
+
+    const host = new MockLayoutBase();
+    const root = renderRoot(host);
+
+    root.render(Scene, { second: false, target: null });
+    const target = host.children[0] as unknown as MockLayoutBase;
+    expect(target.typeName).toBe('GridLayout');
+    expect(labels(target).map((label) => label.text)).toEqual(['inner']);
+
+    root.render(Scene, { second: false, target: target as never });
+    expect(labels(target).map((label) => label.text)).toEqual([
+      'inner',
+      'portal',
+    ]);
+
+    // An ordinary child appended inside the target stays ahead of the portal
+    // children, and removing it leaves them undisturbed.
+    root.render(Scene, { second: true, target: target as never });
+    expect(labels(target).map((label) => label.text)).toEqual([
+      'inner',
+      'second',
+      'portal',
+    ]);
+    root.render(Scene, { second: false, target: target as never });
+    expect(labels(target).map((label) => label.text)).toEqual([
+      'inner',
+      'portal',
+    ]);
+
+    // Unmount detaches the layout from the host; its own subtree stays, and
+    // only the portal child is released from it.
+    root.unmount();
+    expect(labels(target).map((label) => label.text)).toEqual(['inner']);
   });
 
   it('rejects non-view and non-layout targets', () => {

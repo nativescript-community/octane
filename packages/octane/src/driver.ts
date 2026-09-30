@@ -453,10 +453,25 @@ function attach(container: NativeScriptContainer, node: HostNode): void {
   }
   const parentView = hostViewOf(container, parent);
   if (parentView === null) return;
+  const siblings = childrenOf(container, parent);
   let index = 0;
-  for (const sibling of childrenOf(container, parent)) {
-    if (sibling === node) break;
-    if (sibling.view !== null) index++;
+  if (isPortalTarget(parent) && parentView instanceof LayoutBase) {
+    // The target view can host children this entry does not own — ordinary
+    // children when it is also the root host or a host node's view, and any
+    // the caller added itself. Portal children take the tail: insert after
+    // every child but the entry siblings that follow `node`, so entry order
+    // holds without disturbing the children ahead of it.
+    index = parentView.getChildrenCount();
+    let found = false;
+    for (const sibling of siblings) {
+      if (sibling === node) found = true;
+      else if (found && sibling.view !== null) index--;
+    }
+  } else {
+    for (const sibling of siblings) {
+      if (sibling === node) break;
+      if (sibling.view !== null) index++;
+    }
   }
   addViewChild(parentView, node.view, index);
   markTabView(tabViewOwning(node));
