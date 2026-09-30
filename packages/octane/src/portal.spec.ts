@@ -32,7 +32,9 @@ import {
   createNativeScriptContainer,
   createNativeScriptRoot,
   nativeScriptDriver,
+  releaseNativeScriptContainer,
 } from './driver.js';
+import { type ElementConstructor, registerElement } from './elements.js';
 
 const RID = NATIVESCRIPT_RENDERER_ID;
 
@@ -321,6 +323,171 @@ describe('portals', () => {
     // only the portal child is released from it.
     root.unmount();
     expect(labels(target).map((label) => label.text)).toEqual(['inner']);
+  });
+
+  /**
+   * Re-registering the target's element class swaps its view under a live
+   * registration: the entry keeps its handle and the portal children move to
+   * the replacement, after the ordinary children. The stable target id moves
+   * with the view, so the next render mints the same handle and the
+   * registration is recognized as already committed.
+   */
+  it('keeps a portal on a driver-owned target whose element class is replaced', () => {
+    const Theme = createContext('default');
+    const Reader = defineUniversalComponent(RID, () =>
+      universalValue(labelPlan, [useContext(Theme)]),
+    );
+    const layoutPlan = universalPlan(RID, {
+      kind: 'host',
+      type: 'gridlayout',
+      propsSlot: 0,
+    });
+    const Scene = defineUniversalComponent(
+      RID,
+      (props: { theme: string; target: core.LayoutBase | null }) =>
+        universalContext(Theme, props.theme, [
+          universalValue(layoutPlan, [
+            universalProps([], [universalValue(labelPlan, ['inner'])]),
+          ]),
+          props.target === null
+            ? null
+            : createPortal(universalComponent(RID, Reader), props.target),
+        ]),
+    );
+
+    const host = new MockLayoutBase();
+    const container = createNativeScriptContainer(
+      host as unknown as core.ViewBase,
+    );
+    const root = createUniversalRoot(container, nativeScriptDriver, {
+      scheduleMicrotask: (callback) => {
+        Promise.resolve().then(callback);
+      },
+    });
+    container.root = root;
+
+    root.render(Scene, { theme: 'warm', target: null });
+    const target = host.children[0] as unknown as MockLayoutBase;
+    expect(target.typeName).toBe('GridLayout');
+
+    root.render(Scene, { theme: 'warm', target: target as never });
+    expect(labels(target).map((label) => label.text)).toEqual([
+      'inner',
+      'warm',
+    ]);
+    const leaf = labels(target)[1];
+    const entry = [...container.portalTargets.values()][0];
+    expect(entry.view).toBe(target);
+
+    class NextGridLayout extends MockLayoutBase {}
+    try {
+      registerElement(
+        'gridlayout',
+        NextGridLayout as unknown as ElementConstructor,
+      );
+
+      const replacement = host.children[0] as unknown as MockLayoutBase;
+      expect(replacement).not.toBe(target);
+      expect(replacement).toBeInstanceOf(NextGridLayout);
+      // The same portal child moved to the replacement, still after the
+      // node's ordinary children; the old view is left with nothing.
+      expect(labels(replacement).map((label) => label.text)).toEqual([
+        'inner',
+        'warm',
+      ]);
+      expect(labels(replacement)[1]).toBe(leaf);
+      expect((leaf as unknown as MockView).parent).toBe(replacement);
+      expect(target.children).toHaveLength(0);
+      expect(entry.view).toBe(replacement);
+
+      // Re-rendering against the replacement mints the same target handle:
+      // the entry is untouched and context updates reach the portal child.
+      root.render(Scene, { theme: 'cool', target: replacement as never });
+      expect([...container.portalTargets.values()]).toEqual([entry]);
+      expect(labels(replacement)[1]).toBe(leaf);
+      expect(leaf.text).toBe('cool');
+    } finally {
+      // The restore pass recreates the view once more, portal child included.
+      registerElement(
+        'gridlayout',
+        core.GridLayout as unknown as ElementConstructor,
+      );
+    }
+
+    // Teardown detaches the portal child and releases the registration; the
+    // node's own subtree stays with the current replacement view.
+    const restored = host.children[0] as unknown as MockLayoutBase;
+    expect(labels(restored)[1]).toBe(leaf);
+    root.unmount();
+    expect(container.portalTargets.size).toBe(0);
+    expect(labels(restored).map((label) => label.text)).toEqual(['inner']);
+    expect((leaf as unknown as MockView).parent).toBeNull();
+    releaseNativeScriptContainer(container);
+  });
+
+  /**
+   * A replacement that is no longer a layout cannot honor the target
+   * contract, so the swap fails before any view detaches: the previous view
+   * keeps the portal children and the registration stays live.
+   */
+  it('fails a target replacement that can no longer host children', () => {
+    const layoutPlan = universalPlan(RID, { kind: 'host', type: 'gridlayout' });
+    const Scene = defineUniversalComponent(
+      RID,
+      (props: { target: core.LayoutBase | null }) => [
+        universalValue(layoutPlan),
+        props.target === null
+          ? null
+          : createPortal(universalValue(labelPlan, ['leaf']), props.target),
+      ],
+    );
+
+    const host = new MockLayoutBase();
+    const container = createNativeScriptContainer(
+      host as unknown as core.ViewBase,
+    );
+    const root = createUniversalRoot(container, nativeScriptDriver, {
+      scheduleMicrotask: (callback) => {
+        Promise.resolve().then(callback);
+      },
+    });
+    container.root = root;
+
+    root.render(Scene, { target: null });
+    const target = host.children[0] as unknown as MockLayoutBase;
+    root.render(Scene, { target: target as never });
+    expect(labels(target)).toHaveLength(1);
+    const leaf = labels(target)[0];
+
+    try {
+      expect(() =>
+        registerElement(
+          'gridlayout',
+          core.Label as unknown as ElementConstructor,
+        ),
+      ).toThrow(/cannot host portal children/);
+
+      // The rejected swap left the live portal untouched.
+      expect(host.children[0]).toBe(target);
+      expect(labels(target)).toHaveLength(1);
+      expect(container.portalTargets.size).toBe(1);
+    } finally {
+      // Restoring a layout-capable class recreates the view normally.
+      registerElement(
+        'gridlayout',
+        core.GridLayout as unknown as ElementConstructor,
+      );
+    }
+
+    const replacement = host.children[0] as unknown as MockLayoutBase;
+    expect(replacement).toBeInstanceOf(core.GridLayout);
+    expect(labels(replacement)[0]).toBe(leaf);
+
+    root.unmount();
+    expect(container.portalTargets.size).toBe(0);
+    expect(replacement.children).toHaveLength(0);
+    expect((leaf as unknown as MockView).parent).toBeNull();
+    releaseNativeScriptContainer(container);
   });
 
   it('rejects non-view and non-layout targets', () => {

@@ -69,7 +69,8 @@ type NativeScriptParent = HostNode | UniversalPortalTargetHandle | null;
  */
 interface PortalTarget {
   readonly handle: UniversalPortalTargetHandle;
-  readonly view: LayoutBase;
+  /** Swapped in place when the target's element class is re-registered. */
+  view: LayoutBase;
   readonly children: HostNode[];
   refs: number;
 }
@@ -556,15 +557,34 @@ function disposeListeners(node: HostNode): void {
 function recreateView(container: NativeScriptContainer, node: HostNode): void {
   const previous = node.view;
   if (previous === null) return;
+  // The node's view may back an active portal target; its registration and
+  // handle survive the swap and its portal children move to the replacement.
+  let portalTarget: PortalTarget | undefined;
+  for (const entry of container.portalTargets.values()) {
+    if (entry.view === previous) portalTarget = entry;
+  }
+  const view = instantiate(node.type);
+  if (portalTarget !== undefined && !(view instanceof LayoutBase)) {
+    // Fail before anything detaches: the previous view keeps the registration
+    // and its portal children rather than stranding them on a view that can
+    // no longer host them.
+    throw new Error(
+      `NativeScript driver: re-registered <${node.type}> is a <${view.typeName}>, which cannot host portal children; the registration stays on the previous view.`,
+    );
+  }
   const parentView = hostViewOf(container, node.parent);
   for (const child of node.children) {
     if (child.view !== null) removeViewChild(previous, child.view);
+  }
+  if (portalTarget !== undefined) {
+    for (const child of portalTarget.children) {
+      if (child.view !== null) removeViewChild(previous, child.view);
+    }
   }
   if (parentView !== null) removeViewChild(parentView, previous);
   for (const [type, handler] of node.listeners) previous.off(type, handler);
   if (previous instanceof ListView) releaseListView(previous);
 
-  const view = instantiate(node.type);
   viewOwners.set(view, container);
   node.view = view;
   node.textApplied = false;
@@ -573,6 +593,16 @@ function recreateView(container: NativeScriptContainer, node: HostNode): void {
   let index = 0;
   for (const child of node.children) {
     if (child.view !== null) addViewChild(view, child.view, index++);
+  }
+  if (portalTarget !== undefined) {
+    // Keep the stable target id on the replacement so the next prepareTarget
+    // mints the same handle, and seat the portal children at the tail again.
+    const id = portalTargetIds.get(previous);
+    if (id !== undefined) portalTargetIds.set(view, id);
+    portalTarget.view = view as LayoutBase;
+    for (const child of portalTarget.children) {
+      if (child.view !== null) addViewChild(view, child.view, index++);
+    }
   }
   syncText(node);
   markTabView(node);
