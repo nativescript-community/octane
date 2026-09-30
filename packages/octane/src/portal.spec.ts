@@ -193,6 +193,60 @@ describe('portals', () => {
     root.unmount();
   });
 
+  it('preserves keyed order when another root shares a caller-owned target', () => {
+    const Scene = defineUniversalComponent(
+      RID,
+      (props: { order: readonly string[]; target: core.LayoutBase }) =>
+        createPortal(
+          props.order.map((text) =>
+            universalKey(text, universalValue(labelPlan, [text])),
+          ),
+          props.target,
+        ),
+    );
+    const target = new core.GridLayout() as unknown as MockLayoutBase;
+    const firstRoot = renderRoot(new MockLayoutBase());
+    const secondRoot = renderRoot(new MockLayoutBase());
+
+    try {
+      firstRoot.render(Scene, {
+        order: ['a1', 'a2', 'a3'],
+        target: target as never,
+      });
+      const original = labels(target).slice();
+      secondRoot.render(Scene, { order: ['b1'], target: target as never });
+      const foreign = labels(target)[3];
+
+      firstRoot.render(Scene, {
+        order: ['a3', 'a2', 'a1'],
+        target: target as never,
+      });
+      const ownLabels = () => labels(target).filter((view) => view !== foreign);
+      expect(ownLabels().map((view) => view.text)).toEqual(['a3', 'a2', 'a1']);
+      expect(ownLabels()[0]).toBe(original[2]);
+      expect(ownLabels()[1]).toBe(original[1]);
+      expect(ownLabels()[2]).toBe(original[0]);
+      expect(foreign.parent).toBe(target);
+
+      // Prepending also uses a native sibling anchor, rather than a tail offset.
+      firstRoot.render(Scene, {
+        order: ['a0', 'a3', 'a2', 'a1'],
+        target: target as never,
+      });
+      expect(ownLabels().map((view) => view.text)).toEqual([
+        'a0',
+        'a3',
+        'a2',
+        'a1',
+      ]);
+      expect(foreign.parent).toBe(target);
+    } finally {
+      firstRoot.unmount();
+      secondRoot.unmount();
+    }
+    expect(target.children).toHaveLength(0);
+  });
+
   it('moves the subtree to the new target on retarget without remounting', () => {
     const Scene = defineUniversalComponent(
       RID,

@@ -457,16 +457,21 @@ function attach(container: NativeScriptContainer, node: HostNode): void {
   const siblings = childrenOf(container, parent);
   let index = 0;
   if (isPortalTarget(parent) && parentView instanceof LayoutBase) {
-    // The target view can host children this entry does not own — ordinary
-    // children when it is also the root host or a host node's view, and any
-    // the caller added itself. Portal children take the tail: insert after
-    // every child but the entry siblings that follow `node`, so entry order
-    // holds without disturbing the children ahead of it.
+    // Other roots and the caller can share this layout. Anchor to the next
+    // attached sibling's actual position; an offset from the tail assumes
+    // that no foreign children follow or interrupt this entry's children.
+    // With no following sibling, append after the target's existing content.
     index = parentView.getChildrenCount();
     let found = false;
     for (const sibling of siblings) {
       if (sibling === node) found = true;
-      else if (found && sibling.view !== null) index--;
+      else if (found && sibling.view?.parent === parentView) {
+        const siblingIndex = parentView.getChildIndex(sibling.view as View);
+        if (siblingIndex !== -1) {
+          index = siblingIndex;
+          break;
+        }
+      }
     }
   } else {
     for (const sibling of siblings) {
