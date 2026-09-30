@@ -88,9 +88,14 @@ export interface NativeScriptContainer {
  * The container that instantiated each driver-owned view. A portal target a
  * different root created is foreign — portals may target views owned by the
  * caller or by this root, never by another root (whose teardown would orphan
- * the portal children or carry them into a view it destroys).
+ * the portal children or carry them into a view it destroys). Old native
+ * references resolve through their logical node, even when no portal
+ * registration is active during a subsequent hot replacement.
  */
-const viewOwners = new WeakMap<ViewBase, NativeScriptContainer>();
+const viewOwners = new WeakMap<
+  ViewBase,
+  { container: NativeScriptContainer; node: HostNode }
+>();
 
 /** Stable per-view ids, so re-rendering a portal mints the same target handle. */
 const portalTargetIds = new WeakMap<ViewBase, number>();
@@ -161,7 +166,7 @@ function createNode(
     muted: new Set(),
     textApplied: false,
   };
-  if (node.view !== null) viewOwners.set(node.view, container);
+  if (node.view !== null) viewOwners.set(node.view, { container, node });
   applyProps(node, props);
   return node;
 }
@@ -590,7 +595,7 @@ function recreateView(container: NativeScriptContainer, node: HostNode): void {
   for (const [type, handler] of node.listeners) previous.off(type, handler);
   if (previous instanceof ListView) releaseListView(previous);
 
-  viewOwners.set(view, container);
+  viewOwners.set(view, { container, node });
   node.view = view;
   node.textApplied = false;
   applyProps(node, node.props);
@@ -599,11 +604,11 @@ function recreateView(container: NativeScriptContainer, node: HostNode): void {
   for (const child of node.children) {
     if (child.view !== null) addViewChild(view, child.view, index++);
   }
+  // Preserve target identity even while every portal to this view is closed.
+  const id = portalTargetIds.get(previous);
+  if (id !== undefined) portalTargetIds.set(view, id);
   if (portalTarget !== undefined) {
-    // Keep the stable target id on the replacement so the next prepareTarget
-    // mints the same handle, and seat the portal children at the tail again.
-    const id = portalTargetIds.get(previous);
-    if (id !== undefined) portalTargetIds.set(view, id);
+    // Seat live portal children at the tail of the replacement layout.
     portalTarget.view = view as LayoutBase;
     for (const child of portalTarget.children) {
       if (child.view !== null) addViewChild(view, child.view, index++);
@@ -655,21 +660,22 @@ function resolveParent(
 function preparePortalTarget(
   context: UniversalPortalTargetContext<NativeScriptContainer>,
 ): UniversalPortalTargetRegistration {
-  const { container, target } = context;
-  if (!(target instanceof View)) {
+  const { container, target: suppliedTarget } = context;
+  if (!(suppliedTarget instanceof View)) {
     throw new TypeError(
       'NativeScript driver: a portal target must be a NativeScript view.',
     );
   }
+  const owner = viewOwners.get(suppliedTarget);
+  if (owner !== undefined && owner.container !== container) {
+    throw new Error(
+      'NativeScript driver: a portal target must not belong to another Octane root.',
+    );
+  }
+  const target = owner?.node.view ?? suppliedTarget;
   if (!(target instanceof LayoutBase)) {
     throw new TypeError(
       `NativeScript driver: a <${target.typeName}> view cannot host portal children; target a layout (e.g. rootlayout, gridlayout).`,
-    );
-  }
-  const owner = viewOwners.get(target);
-  if (owner !== undefined && owner !== container) {
-    throw new Error(
-      'NativeScript driver: a portal target must not belong to another Octane root.',
     );
   }
 

@@ -485,6 +485,66 @@ describe('portals', () => {
     }
   });
 
+  it('reopens against the current view after repeated target replacement', () => {
+    const layoutPlan = universalPlan(RID, { kind: 'host', type: 'gridlayout' });
+    const Scene = defineUniversalComponent(
+      RID,
+      (props: { target: core.LayoutBase | null; open: boolean }) => [
+        universalValue(layoutPlan),
+        props.open && props.target !== null
+          ? createPortal(universalValue(labelPlan, ['leaf']), props.target)
+          : null,
+      ],
+    );
+    const host = new MockLayoutBase();
+    const root = renderRoot(host);
+    class NextGridLayout extends MockLayoutBase {}
+    class LatestGridLayout extends MockLayoutBase {}
+    let latest: MockLayoutBase | undefined;
+
+    try {
+      root.render(Scene, { target: null, open: false });
+      const original = host.children[0] as unknown as MockLayoutBase;
+      root.render(Scene, { target: original as never, open: true });
+      const initialLeaf = labels(original)[0];
+
+      registerElement(
+        'gridlayout',
+        NextGridLayout as unknown as ElementConstructor,
+      );
+      const replacement = host.children[0] as unknown as MockLayoutBase;
+      expect(labels(replacement)[0]).toBe(initialLeaf);
+      root.render(Scene, { target: original as never, open: false });
+      expect(replacement.children).toHaveLength(0);
+
+      // Replace again while there are no active portal registrations. Both
+      // the original reference and the intermediate reference remain valid.
+      registerElement(
+        'gridlayout',
+        LatestGridLayout as unknown as ElementConstructor,
+      );
+      latest = host.children[0] as unknown as MockLayoutBase;
+      root.render(Scene, { target: original as never, open: true });
+      const reopenedLeaf = labels(latest)[0];
+      expect(reopenedLeaf?.text).toBe('leaf');
+      expect(reopenedLeaf?.parent).toBe(latest);
+      expect(original.children).toHaveLength(0);
+      expect(replacement.children).toHaveLength(0);
+
+      root.render(Scene, { target: replacement as never, open: true });
+      expect(labels(latest)[0]).toBe(reopenedLeaf);
+      root.render(Scene, { target: latest as never, open: true });
+      expect(labels(latest)[0]).toBe(reopenedLeaf);
+    } finally {
+      root.unmount();
+      registerElement(
+        'gridlayout',
+        core.GridLayout as unknown as ElementConstructor,
+      );
+    }
+    expect(latest?.children).toHaveLength(0);
+  });
+
   /**
    * A replacement that is no longer a layout cannot honor the target
    * contract, so the swap fails before any view detaches: the previous view
