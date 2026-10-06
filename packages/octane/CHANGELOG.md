@@ -1,3 +1,13 @@
+## 0.2.5 (2026-10-06)
+
+### 🚀 Features
+
+- **octane:** add NativeScript portal support ([#13](https://github.com/nativescript-community/octane/pull/13))
+
+### ❤️ Thank You
+
+- Alec Larson @aleclarson
+
 ## 0.2.4 (2026-09-25)
 
 ### 🩹 Fixes
