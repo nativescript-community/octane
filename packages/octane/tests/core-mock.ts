@@ -69,6 +69,10 @@ export class MockLayoutBase extends MockView {
     child.parent = null;
   }
 
+  getChildIndex(child: MockView): number {
+    return this.children.indexOf(child);
+  }
+
   getChildrenCount(): number {
     return this.children.length;
   }

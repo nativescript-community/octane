@@ -18,6 +18,9 @@ import {
   type UniversalEventListenerDescriptor,
   type UniversalHostCommand,
   type UniversalHostDriver,
+  type UniversalPortalTargetContext,
+  type UniversalPortalTargetHandle,
+  type UniversalPortalTargetRegistration,
   type UniversalRoot,
 } from 'octane/universal/native';
 import { NATIVESCRIPT_RENDERER_ID } from './config.js';
@@ -43,7 +46,7 @@ interface HostNode {
   view: ViewBase | null;
   text: string;
   props: Readonly<Record<string, unknown>>;
-  parent: HostNode | null;
+  parent: NativeScriptParent;
   readonly children: HostNode[];
   readonly listeners: Map<string, (data: EventData) => void>;
   /** Change events muted while the driver writes the prop they echo (`text` → `textChange`). */
@@ -52,11 +55,72 @@ interface HostNode {
   textApplied: boolean;
 }
 
+/**
+ * A command `parent`: a host node id's node, the root container (`null`), or a
+ * root-scoped portal target handle minted by `portals.prepareTarget`.
+ */
+type NativeScriptParent = HostNode | UniversalPortalTargetHandle | null;
+
+/**
+ * One active portal target: the caller-supplied native view the runtime sends
+ * `insert`/`move`/`remove` commands against, keyed in the container by
+ * `handle.id`. `refs` counts live registrations — several portals may share a
+ * target view.
+ */
+interface PortalTarget {
+  readonly handle: UniversalPortalTargetHandle;
+  /** Swapped in place when the target's element class is re-registered. */
+  view: LayoutBase;
+  readonly children: HostNode[];
+  refs: number;
+}
+
 export interface NativeScriptContainer {
   readonly host: ViewBase;
   readonly nodes: Map<number, HostNode>;
   readonly children: HostNode[];
+  /** Active portal targets by handle id, emptied as registrations release. */
+  readonly portalTargets: Map<string | number, PortalTarget>;
   root: UniversalRoot | null;
+}
+
+/**
+ * The container that instantiated each driver-owned view. A portal target a
+ * different root created is foreign — portals may target views owned by the
+ * caller or by this root, never by another root (whose teardown would orphan
+ * the portal children or carry them into a view it destroys). Old native
+ * references resolve through their logical node, even when no portal
+ * registration is active during a subsequent hot replacement.
+ */
+const viewOwners = new WeakMap<
+  ViewBase,
+  { container: NativeScriptContainer; node: HostNode }
+>();
+
+/** Stable per-view ids, so re-rendering a portal mints the same target handle. */
+const portalTargetIds = new WeakMap<ViewBase, number>();
+let nextPortalTargetId = 0;
+
+function isPortalTarget(value: unknown): value is UniversalPortalTargetHandle {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    (value as UniversalPortalTargetHandle).$$kind ===
+      'octane.universal.portal-target'
+  );
+}
+
+function portalTargetOf(
+  container: NativeScriptContainer,
+  handle: UniversalPortalTargetHandle,
+): PortalTarget {
+  const entry = container.portalTargets.get(handle.id);
+  if (entry === undefined || entry.handle !== handle) {
+    throw new Error(
+      `NativeScript driver: inactive portal target ${JSON.stringify(handle.id)}.`,
+    );
+  }
+  return entry;
 }
 
 function expect(container: NativeScriptContainer, id: number): HostNode {
@@ -68,19 +132,24 @@ function expect(container: NativeScriptContainer, id: number): HostNode {
 
 function childrenOf(
   container: NativeScriptContainer,
-  parent: HostNode | null,
+  parent: NativeScriptParent,
 ): HostNode[] {
-  return parent === null ? container.children : parent.children;
+  if (parent === null) return container.children;
+  if (isPortalTarget(parent)) return portalTargetOf(container, parent).children;
+  return parent.children;
 }
 
 function hostViewOf(
   container: NativeScriptContainer,
-  parent: HostNode | null,
+  parent: NativeScriptParent,
 ): ViewBase | null {
-  return parent === null ? container.host : parent.view;
+  if (parent === null) return container.host;
+  if (isPortalTarget(parent)) return portalTargetOf(container, parent).view;
+  return parent.view;
 }
 
 function createNode(
+  container: NativeScriptContainer,
   id: number,
   type: string,
   props: Readonly<Record<string, unknown>>,
@@ -97,6 +166,7 @@ function createNode(
     muted: new Set(),
     textApplied: false,
   };
+  if (node.view !== null) viewOwners.set(node.view, { container, node });
   applyProps(node, props);
   return node;
 }
@@ -205,8 +275,8 @@ function applyStyle(view: ViewBase, value: unknown): void {
 }
 
 /** Recompute a text host's `text` from its `#text` children. */
-function syncText(parent: HostNode | null): void {
-  if (parent === null) return;
+function syncText(parent: NativeScriptParent): void {
+  if (parent === null || isPortalTarget(parent)) return;
   const view = parent.view;
   if (!(view instanceof TextBase)) return;
   let text = '';
@@ -353,9 +423,14 @@ function flushTabViews(pending: Set<HostNode> | undefined): void {
 /** The tab view node that a node's attachment can change the items of, if any. */
 function tabViewOwning(node: HostNode): HostNode | null {
   const parent = node.parent;
-  if (parent === null) return null;
+  if (parent === null || isPortalTarget(parent)) return null;
   if (node.view instanceof TabViewItem) return parent;
-  if (parent.view instanceof TabViewItem) return parent.parent;
+  if (parent.view instanceof TabViewItem) {
+    const grandparent = parent.parent;
+    return grandparent !== null && !isPortalTarget(grandparent)
+      ? grandparent
+      : null;
+  }
   return null;
 }
 
@@ -366,7 +441,13 @@ function detach(container: NativeScriptContainer, node: HostNode): void {
   if (index !== -1) siblings.splice(index, 1);
   if (node.view === null) syncText(parent);
   else removeViewChild(hostViewOf(container, parent), node.view);
-  if (node.view instanceof TabViewItem) markTabView(parent);
+  if (
+    node.view instanceof TabViewItem &&
+    parent !== null &&
+    !isPortalTarget(parent)
+  ) {
+    markTabView(parent);
+  }
   node.parent = null;
 }
 
@@ -378,10 +459,30 @@ function attach(container: NativeScriptContainer, node: HostNode): void {
   }
   const parentView = hostViewOf(container, parent);
   if (parentView === null) return;
+  const siblings = childrenOf(container, parent);
   let index = 0;
-  for (const sibling of childrenOf(container, parent)) {
-    if (sibling === node) break;
-    if (sibling.view !== null) index++;
+  if (isPortalTarget(parent) && parentView instanceof LayoutBase) {
+    // Other roots and the caller can share this layout. Anchor to the next
+    // attached sibling's actual position; an offset from the tail assumes
+    // that no foreign children follow or interrupt this entry's children.
+    // With no following sibling, append after the target's existing content.
+    index = parentView.getChildrenCount();
+    let found = false;
+    for (const sibling of siblings) {
+      if (sibling === node) found = true;
+      else if (found && sibling.view?.parent === parentView) {
+        const siblingIndex = parentView.getChildIndex(sibling.view as View);
+        if (siblingIndex !== -1) {
+          index = siblingIndex;
+          break;
+        }
+      }
+    }
+  } else {
+    for (const sibling of siblings) {
+      if (sibling === node) break;
+      if (sibling.view !== null) index++;
+    }
   }
   addViewChild(parentView, node.view, index);
   markTabView(tabViewOwning(node));
@@ -389,7 +490,7 @@ function attach(container: NativeScriptContainer, node: HostNode): void {
 
 function insert(
   container: NativeScriptContainer,
-  parent: HostNode | null,
+  parent: NativeScriptParent,
   node: HostNode,
   before: number | null,
 ): void {
@@ -466,15 +567,35 @@ function disposeListeners(node: HostNode): void {
 function recreateView(container: NativeScriptContainer, node: HostNode): void {
   const previous = node.view;
   if (previous === null) return;
+  // The node's view may back an active portal target; its registration and
+  // handle survive the swap and its portal children move to the replacement.
+  let portalTarget: PortalTarget | undefined;
+  for (const entry of container.portalTargets.values()) {
+    if (entry.view === previous) portalTarget = entry;
+  }
+  const view = instantiate(node.type);
+  if (portalTarget !== undefined && !(view instanceof LayoutBase)) {
+    // Fail before anything detaches: the previous view keeps the registration
+    // and its portal children rather than stranding them on a view that can
+    // no longer host them.
+    throw new Error(
+      `NativeScript driver: re-registered <${node.type}> is a <${view.typeName}>, which cannot host portal children; the registration stays on the previous view.`,
+    );
+  }
   const parentView = hostViewOf(container, node.parent);
   for (const child of node.children) {
     if (child.view !== null) removeViewChild(previous, child.view);
+  }
+  if (portalTarget !== undefined) {
+    for (const child of portalTarget.children) {
+      if (child.view !== null) removeViewChild(previous, child.view);
+    }
   }
   if (parentView !== null) removeViewChild(parentView, previous);
   for (const [type, handler] of node.listeners) previous.off(type, handler);
   if (previous instanceof ListView) releaseListView(previous);
 
-  const view = instantiate(node.type);
+  viewOwners.set(view, { container, node });
   node.view = view;
   node.textApplied = false;
   applyProps(node, node.props);
@@ -482,6 +603,16 @@ function recreateView(container: NativeScriptContainer, node: HostNode): void {
   let index = 0;
   for (const child of node.children) {
     if (child.view !== null) addViewChild(view, child.view, index++);
+  }
+  // Preserve target identity even while every portal to this view is closed.
+  const id = portalTargetIds.get(previous);
+  if (id !== undefined) portalTargetIds.set(view, id);
+  if (portalTarget !== undefined) {
+    // Seat live portal children at the tail of the replacement layout.
+    portalTarget.view = view as LayoutBase;
+    for (const child of portalTarget.children) {
+      if (child.view !== null) addViewChild(view, child.view, index++);
+    }
   }
   syncText(node);
   markTabView(node);
@@ -498,12 +629,84 @@ onElementReplaced((tag) => {
   }
 });
 
-/** A non-numeric parent is the root container; portals are not enabled. */
+/**
+ * A numeric parent is a host node, `null` the root container, and a portal
+ * target handle an active registration. Anything else — a stale handle whose
+ * registration was released, one minted by another root, or a value that is
+ * no parent at all — fails here rather than silently attaching to the root.
+ */
 function resolveParent(
   container: NativeScriptContainer,
   parent: unknown,
-): HostNode | null {
-  return typeof parent === 'number' ? expect(container, parent) : null;
+): NativeScriptParent {
+  if (parent === null) return null;
+  if (typeof parent === 'number') return expect(container, parent);
+  if (isPortalTarget(parent)) {
+    portalTargetOf(container, parent);
+    return parent;
+  }
+  throw new Error(
+    'NativeScript driver: an insert/move/remove parent must be a host id, null, or an active portal target.',
+  );
+}
+
+/**
+ * Register `target` (a `LayoutBase`) as a native host this root's portals can
+ * render into. The runtime calls this for every render that contains a portal,
+ * so the handle id derives from the target view itself: re-rendering an
+ * unchanged portal mints the same handle, which is how the runtime recognizes
+ * the registration as already committed instead of moving the children.
+ */
+function preparePortalTarget(
+  context: UniversalPortalTargetContext<NativeScriptContainer>,
+): UniversalPortalTargetRegistration {
+  const { container, target: suppliedTarget } = context;
+  if (!(suppliedTarget instanceof View)) {
+    throw new TypeError(
+      'NativeScript driver: a portal target must be a NativeScript view.',
+    );
+  }
+  const owner = viewOwners.get(suppliedTarget);
+  if (owner !== undefined && owner.container !== container) {
+    throw new Error(
+      'NativeScript driver: a portal target must not belong to another Octane root.',
+    );
+  }
+  const target = owner?.node.view ?? suppliedTarget;
+  if (!(target instanceof LayoutBase)) {
+    throw new TypeError(
+      `NativeScript driver: a <${target.typeName}> view cannot host portal children; target a layout (e.g. rootlayout, gridlayout).`,
+    );
+  }
+
+  let id = portalTargetIds.get(target);
+  if (id === undefined) {
+    id = ++nextPortalTargetId;
+    portalTargetIds.set(target, id);
+  }
+  const handle = context.createPortalTargetHandle(`nativescript-view-${id}`);
+
+  let entry = container.portalTargets.get(handle.id);
+  if (entry === undefined) {
+    entry = { handle, view: target, children: [], refs: 0 };
+    container.portalTargets.set(handle.id, entry);
+  }
+  entry.refs++;
+
+  let released = false;
+  return {
+    handle,
+    release() {
+      if (released) return;
+      released = true;
+      if (--entry.refs !== 0) return;
+      // The runtime removes a portal's children before releasing its
+      // registration; any still attached (a batch aborted mid-apply) are
+      // detached here so no view is orphaned on the target.
+      for (const child of [...entry.children]) detach(container, child);
+      container.portalTargets.delete(handle.id);
+    },
+  };
 }
 
 function applyCommand(
@@ -514,7 +717,7 @@ function applyCommand(
     case 'create': {
       container.nodes.set(
         command.id,
-        createNode(command.id, command.type, command.props),
+        createNode(container, command.id, command.type, command.props),
       );
       return;
     }
@@ -525,7 +728,12 @@ function applyCommand(
       const index = siblings.indexOf(previous);
       detach(container, previous);
       disposeListeners(previous);
-      const node = createNode(command.id, command.type, command.props);
+      const node = createNode(
+        container,
+        command.id,
+        command.type,
+        command.props,
+      );
       container.nodes.set(command.id, node);
       if (index === -1) return;
       siblings.splice(index, 0, node);
@@ -594,6 +802,7 @@ export const nativeScriptDriver: UniversalHostDriver<
       return { type: eventNameFor(name), priority: 'discrete' };
     },
   },
+  portals: { prepareTarget: preparePortalTarget },
   prepareBatch(container, batch) {
     if (batch.renderer !== NATIVESCRIPT_RENDERER_ID) {
       throw new Error(
@@ -649,6 +858,7 @@ export function createNativeScriptContainer(
     host,
     nodes: new Map(),
     children: [],
+    portalTargets: new Map(),
     root: null,
   };
   containers.add(container);

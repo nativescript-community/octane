@@ -198,6 +198,7 @@ Details of the host contract that are easy to get wrong, each learned by watchin
 - **Events during a commit are deferred.** Attaching a subtree fires `loaded` synchronously, inside the batch that registered the listener, before the listener is live. The driver defers those to a microtask and drops a dispatch to a listener that is gone rather than aborting the batch.
 - **Detaching is defensive.** `LayoutBase.removeChild` throws for a view that is not attached, and `insert` detaches unconditionally, so the driver checks `parent` first.
 - **Hidden means `collapse`.** A `visibility` command maps `hidden` to NativeScript's `collapse`, which removes the view from layout as well as from the screen.
+- **Portals render into the target view.** `createPortal(children, view)` requires a `LayoutBase` — typically a `rootlayout` for overlays — and inserts the children there in declaration order. The content stays owned by its declaring Octane root: it keeps that root's context and re-renders with it. The target view itself may be caller-owned (like `getRootLayout()`); the driver never reparents or destroys it, and a view created by a _different_ Octane root is rejected. Target references continue to resolve to the current view after element hot replacement, including when a portal closes and reopens. Portals are placement, not context inheritance — a portal into a caller-owned view does not share context with any other root mounted into it.
 
 ## Peer versions
 
