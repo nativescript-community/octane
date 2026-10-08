@@ -27,7 +27,11 @@ import type * as NS from '@nativescript/core';
 export type NativeScriptNode = unknown;
 
 type Ref<TInstance> =
-  ((instance: TInstance | null) => void) | { current: TInstance | null } | null;
+  | ((instance: TInstance | null) => void | (() => void))
+  | { current: TInstance | null }
+  | readonly Ref<TInstance>[]
+  | null
+  | undefined;
 
 /**
  * The driver assigns every non-event prop onto the view instance, so a JSX
@@ -137,7 +141,7 @@ export interface ListViewAttributes {
 
 export interface OctaneAttributes<TInstance> {
   key?: string | number;
-  ref?: Ref<TInstance> | readonly Ref<TInstance>[];
+  ref?: Ref<TInstance>;
   children?: NativeScriptNode;
 }
 
