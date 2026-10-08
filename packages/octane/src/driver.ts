@@ -240,6 +240,10 @@ function setProp(
     );
     return;
   }
+  // `undefined` means "prop not supplied" — skip the write. NativeScript
+  // native setters coerce it (e.g. editable → ios.userInteractionEnabled =
+  // NO) leaving dead UI that still has its JS listeners.
+  if (value === undefined) return;
   // Core raises `<name>Change` for a script write exactly as for a user
   // edit; a controlled input must not see its own value come back as one.
   const echo = `${name}Change`;
@@ -795,7 +799,7 @@ export const nativeScriptDriver: UniversalHostDriver<
   ViewBase | null
 > = {
   id: NATIVESCRIPT_RENDERER_ID,
-  capabilities: { text: 'host' },
+  capabilities: { text: 'host', visibility: true },
   events: {
     classify(name) {
       if (!EVENT_PROP.test(name)) return null;
