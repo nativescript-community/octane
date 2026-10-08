@@ -21,7 +21,9 @@ import {
  * the screen ends up one save behind.
  */
 
-const SCRIPT_FILE_RE = /\.(?:[mc]?[jt]sx?)$/i;
+// `.tsrx` is Octane's component extension — without it the deferred delta is
+// never emitted and component edits silently never reach the device.
+const SCRIPT_FILE_RE = /\.(?:[mc]?[jt]sx?|tsrx)$/i;
 
 export const octaneServerStrategy: FrameworkServerStrategy = {
   ...typescriptServerStrategy,
@@ -31,7 +33,7 @@ export const octaneServerStrategy: FrameworkServerStrategy = {
     const state = await runHotUpdatePrologue(ctx, deps);
     if (!state) return;
     const { root, metrics, emitSummary } = state;
-    const { moduleGraph, verbose, sharedTransformRequest } = deps;
+    const { moduleGraph, verbose, sharedTransformRequest, wss, isSocketClientOpen } = deps;
     const { file, server } = ctx;
     if (!SCRIPT_FILE_RE.test(file)) {
       emitSummary();
@@ -80,6 +82,14 @@ export const octaneServerStrategy: FrameworkServerStrategy = {
       }
       const gm = moduleGraph.get(normalizedId);
       if (gm) moduleGraph.emitDelta([gm], []);
+      // The ns:hmr-delta broadcast IS the update delivery for this flavor —
+      // count open sockets so the always-on summary reflects reality
+      // instead of reporting recipients=0 for a delivered update.
+      try {
+        wss?.clients?.forEach((client: { readyState?: number; OPEN?: number }) => {
+          if (isSocketClientOpen?.(client)) metrics.recipients += 1;
+        });
+      } catch {}
     } catch (e) {
       if (verbose)
         console.warn(
