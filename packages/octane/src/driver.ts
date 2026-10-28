@@ -517,6 +517,46 @@ function insert(
  */
 let applyingDepth = 0;
 
+export interface BatchObserver {
+  /** Before a batch's commands apply; the previous tree is still in place. */
+  willApply?(
+    container: NativeScriptContainer,
+    commands: readonly UniversalHostCommand[],
+    depth: number,
+  ): void;
+  /** After the commands and the TabView flush applied. Not called when apply throws. */
+  didApply?(
+    container: NativeScriptContainer,
+    commands: readonly UniversalHostCommand[],
+    depth: number,
+  ): void;
+}
+
+const batchObservers = new Set<BatchObserver>();
+
+function notifyBatchObservers(
+  method: 'willApply' | 'didApply',
+  container: NativeScriptContainer,
+  commands: readonly UniversalHostCommand[],
+  depth: number,
+): void {
+  for (const observer of [...batchObservers]) {
+    try {
+      observer[method]?.(container, commands, depth);
+    } catch (error) {
+      console.error('NativeScript driver: batch observer threw:', error);
+    }
+  }
+}
+
+/** Observe every batch applied on every NativeScript root; returns an unsubscribe. */
+export function observeBatches(observer: BatchObserver): () => void {
+  batchObservers.add(observer);
+  return () => {
+    batchObservers.delete(observer);
+  };
+}
+
 function setEvent(
   container: NativeScriptContainer,
   node: HostNode,
@@ -811,6 +851,12 @@ export const nativeScriptDriver: UniversalHostDriver<
     }
     return {
       apply() {
+        notifyBatchObservers(
+          'willApply',
+          container,
+          batch.commands,
+          applyingDepth,
+        );
         applyingDepth++;
         pendingTabViews.push(new Set());
         try {
@@ -823,6 +869,12 @@ export const nativeScriptDriver: UniversalHostDriver<
             applyingDepth--;
           }
         }
+        notifyBatchObservers(
+          'didApply',
+          container,
+          batch.commands,
+          applyingDepth,
+        );
       },
       // Nothing is staged ahead of `apply`, so there is nothing to release.
       abort() {},

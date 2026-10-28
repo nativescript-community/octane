@@ -21,6 +21,7 @@ import {
 } from '../tests/core-mock.js';
 import {
   createNativeScriptContainer,
+  observeBatches,
   type NativeScriptContainer,
   nativeScriptDriver,
   releaseNativeScriptContainer,
@@ -499,6 +500,120 @@ describe('nativeScriptDriver', () => {
     expect(() => apply(create(1, 'nope'))).toThrow(
       /<nope> is not a registered element/,
     );
+  });
+
+  describe('observeBatches', () => {
+    it('willApply sees the pre-batch tree and didApply sees the applied tree', () => {
+      const { apply, host, container } = mount(new MockLayoutBase());
+      const seen: Array<{
+        phase: string;
+        children: number;
+        commands: number;
+        same: boolean;
+      }> = [];
+      const stop = observeBatches({
+        willApply: (c, commands) => {
+          seen.push({
+            phase: 'will',
+            children: host.children.length,
+            commands: commands.length,
+            same: c === container,
+          });
+        },
+        didApply: (c, commands) => {
+          seen.push({
+            phase: 'did',
+            children: host.children.length,
+            commands: commands.length,
+            same: c === container,
+          });
+        },
+      });
+      apply(create(1, 'label'), insert(1));
+      stop();
+      expect(seen.map((s) => s.phase)).toEqual(['will', 'did']);
+      expect(seen[0]).toMatchObject({ children: 0, commands: 2, same: true });
+      expect(seen[1]).toMatchObject({ children: 1, commands: 2, same: true });
+    });
+
+    it('passes depth 0 at top level and depth 1 for a nested apply', () => {
+      const { apply } = mount(new MockLayoutBase());
+      const inner = mount(new MockLayoutBase());
+      const depths: number[] = [];
+      const stop = observeBatches({
+        didApply: (_c, _commands, depth) => depths.push(depth),
+      });
+      registerElement(
+        'nestprobe',
+        class extends MockLayoutBase {
+          set runNested(v: boolean) {
+            if (v) inner.apply(create(9, 'label'), insert(9));
+          }
+        } as unknown as ElementConstructor,
+      );
+      apply(create(1, 'nestprobe', { runNested: true }), insert(1));
+      stop();
+      expect(depths).toEqual([1, 0]);
+    });
+
+    it('unsubscribe stops notifications; removing during willApply is safe', () => {
+      const { apply } = mount(new MockLayoutBase());
+      const calls: string[] = [];
+      const second = { willApply: () => calls.push('second') };
+      const first = {
+        willApply: () => {
+          calls.push('first');
+          stop2();
+        },
+      };
+      const stop1 = observeBatches(first);
+      const stop2 = observeBatches(second);
+      apply(create(1, 'label'), insert(1));
+      // The batch's snapshot still notifies the observer removed mid-callback.
+      expect(calls).toEqual(['first', 'second']);
+      apply(create(2, 'label'), insert(2));
+      expect(calls).toEqual(['first', 'second', 'first']);
+      stop1();
+      apply(create(3, 'label'), insert(3));
+      expect(calls).toEqual(['first', 'second', 'first']);
+    });
+
+    it('a throwing observer does not abort the batch or other observers', () => {
+      const { apply, host } = mount(new MockLayoutBase());
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const seen: string[] = [];
+      const stop = observeBatches({
+        willApply: () => {
+          throw new Error('boom');
+        },
+        didApply: () => seen.push('did'),
+      });
+      const stop2 = observeBatches({ willApply: () => seen.push('other') });
+      expect(() => apply(create(1, 'label'), insert(1))).not.toThrow();
+      expect(seen).toEqual(['other', 'did']);
+      expect(err).toHaveBeenCalledWith(
+        'NativeScript driver: batch observer threw:',
+        expect.any(Error),
+      );
+      stop();
+      stop2();
+      err.mockRestore();
+      expect(host.children.length).toBe(1);
+    });
+
+    it('didApply is skipped when a command throws, and the next batch still observes', () => {
+      const { apply } = mount(new MockLayoutBase());
+      const calls: string[] = [];
+      const stop = observeBatches({
+        willApply: () => calls.push('will'),
+        didApply: (_c, _cmds, depth) => calls.push(`did:${depth}`),
+      });
+      expect(() => apply(create(1, 'nope'))).toThrow();
+      expect(calls).toEqual(['will']);
+      apply(create(2, 'label'), insert(2));
+      expect(calls).toEqual(['will', 'will', 'did:0']);
+      stop();
+    });
   });
 
   it('classifies handler props as discrete host events', () => {

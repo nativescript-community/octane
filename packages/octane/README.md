@@ -200,6 +200,36 @@ Details of the host contract that are easy to get wrong, each learned by watchin
 - **Hidden means `collapse`.** A `visibility` command maps `hidden` to NativeScript's `collapse`, which removes the view from layout as well as from the screen.
 - **Portals render into the target view.** `createPortal(children, view)` requires a `LayoutBase` — typically a `rootlayout` for overlays — and inserts the children there in declaration order. The content stays owned by its declaring Octane root: it keeps that root's context and re-renders with it. The target view itself may be caller-owned (like `getRootLayout()`); the driver never reparents or destroys it, and a view created by a _different_ Octane root is rejected. Target references continue to resolve to the current view after element hot replacement, including when a portal closes and reopens. Portals are placement, not context inheritance — a portal into a caller-owned view does not share context with any other root mounted into it.
 
+### Observing batches
+
+`observeBatches()` notifies an observer around every batch the NativeScript
+driver applies, on every root — the app root, modal roots, programmatically
+created roots (`createNativeScriptRoot`), and list cells. `willApply` fires
+before the commands run, while the previous tree is still in place; `didApply`
+fires after the commands and the TabView flush, and is skipped when a command
+throws. The third argument is the nesting `depth`: `0` for a top-level commit,
+`1` or more when a batch applies inside another (for example a cell root
+committing inside its list's batch).
+
+```ts
+import { observeBatches } from '@nativescript-community/octane';
+
+const stop = observeBatches({
+  willApply(container, commands, depth) {},
+  didApply(container, commands, depth) {},
+});
+stop(); // unsubscribe
+```
+
+Observers are called synchronously in subscription order, a throwing observer
+is logged and skipped without aborting the batch, and unsubscribing inside a
+callback is safe — the callback list is snapshotted per batch.
+
+This exists for layout measurement after a commit (for example, layout
+animations): NativeScript's `layoutChanged` doesn't fire for keyed reorders or
+parent moves, and unchanged children aren't re-rendered on reorder, so a
+driver-level signal is the only reliable point.
+
 ## Peer versions
 
 - `octane` >= 0.1.51 (the universal runtime API this driver targets; unchanged through 0.2.2), compiled by `@octanejs/vite-plugin` >= 0.1.51.
