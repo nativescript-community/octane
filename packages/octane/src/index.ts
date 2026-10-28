@@ -15,7 +15,8 @@ export {
   nativeScriptDriver,
   renderNativeScriptApp,
 } from './driver.js';
-export type { NativeScriptContainer } from './driver.js';
+export { observeBatches } from './driver.js';
+export type { BatchObserver, NativeScriptContainer } from './driver.js';
 export {
   ELEMENTS,
   eventNameFor,
